@@ -3,8 +3,9 @@ use reth::builder::NodeHandle;
 use reth_bsc::{
     chainspec::parser::BscChainSpecParser,
     consensus::ParliaConsensus,
-    node::network::block_import::service::ImportService as BlockImportService,
-    node::{cli::Cli, BscNode},
+    node::{
+        cli::Cli, network::block_import::service::ImportService as BlockImportService, BscNode,
+    },
 };
 use std::sync::Arc;
 use tracing::error;
@@ -28,10 +29,8 @@ fn main() -> eyre::Result<()> {
     }
 
     Cli::<BscChainSpecParser, NoArgs>::parse().run(|builder, _| async move {
-        let NodeHandle {
-            node,
-            node_exit_future: exit_future,
-        } = builder.node(BscNode::default()).launch().await?;
+        let NodeHandle { node, node_exit_future: exit_future } =
+            builder.node(BscNode::default()).launch().await?;
         let provider = node.provider.clone();
         let consensus = Arc::new(ParliaConsensus { provider });
         let (service, _) = BlockImportService::new(consensus, node.beacon_engine_handle.clone());

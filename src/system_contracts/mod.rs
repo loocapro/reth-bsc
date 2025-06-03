@@ -33,24 +33,13 @@ impl<Spec: EthChainSpec> SystemContract<Spec> {
     pub(crate) fn new(chain_spec: Spec) -> Self {
         let validator_abi = serde_json::from_str(*VALIDATOR_SET_ABI).unwrap();
         let stake_hub_abi = serde_json::from_str(*STAKE_HUB_ABI).unwrap();
-        Self {
-            validator_abi,
-            stake_hub_abi,
-            chain_spec,
-        }
+        Self { validator_abi, stake_hub_abi, chain_spec }
     }
 
     /// Creates a deposit tx to pay block reward to a validator.
     pub fn pay_validator_tx(&self, address: Address, block_reward: u128) -> TransactionSigned {
-        let function = self
-            .validator_abi
-            .function("deposit")
-            .unwrap()
-            .first()
-            .unwrap();
-        let input = function
-            .abi_encode_input(&[DynSolValue::Address(address)])
-            .unwrap();
+        let function = self.validator_abi.function("deposit").unwrap().first().unwrap();
+        let input = function.abi_encode_input(&[DynSolValue::Address(address)]).unwrap();
 
         let signature = Signature::new(Default::default(), Default::default(), false);
 
@@ -87,12 +76,7 @@ impl<Spec: EthChainSpec> SystemContract<Spec> {
     }
 
     pub(crate) fn genesis_contracts_txs(&self) -> Vec<TransactionSigned> {
-        let function = self
-            .validator_abi
-            .function("init")
-            .unwrap()
-            .first()
-            .unwrap();
+        let function = self.validator_abi.function("init").unwrap().first().unwrap();
         let input = function.abi_encode_input(&[]).unwrap();
 
         let contracts = vec![
@@ -127,12 +111,7 @@ impl<Spec: EthChainSpec> SystemContract<Spec> {
 
     pub(crate) fn feynman_contracts_txs(&self) -> Vec<TransactionSigned> {
         println!("feynman_contracts_txs");
-        let function = self
-            .stake_hub_abi
-            .function("initialize")
-            .unwrap()
-            .first()
-            .unwrap();
+        let function = self.stake_hub_abi.function("initialize").unwrap().first().unwrap();
         let input = function.abi_encode_input(&[]).unwrap();
 
         let signature = Signature::new(Default::default(), Default::default(), false);
@@ -226,10 +205,7 @@ impl SystemContractName {
 
 fn get_all_system_contracts() -> Vec<SystemContractName> {
     let res = vec![
-        SystemContractName::new(
-            "ValidatorContract".to_string(),
-            VALIDATOR_CONTRACT.to_string(),
-        ),
+        SystemContractName::new("ValidatorContract".to_string(), VALIDATOR_CONTRACT.to_string()),
         SystemContractName::new("SlashContract".to_string(), SLASH_CONTRACT.to_string()),
         SystemContractName::new(
             "SystemRewardContract".to_string(),
@@ -239,52 +215,28 @@ fn get_all_system_contracts() -> Vec<SystemContractName> {
             "LightClientContract".to_string(),
             LIGHT_CLIENT_CONTRACT.to_string(),
         ),
-        SystemContractName::new(
-            "TokenHubContract".to_string(),
-            TOKEN_HUB_CONTRACT.to_string(),
-        ),
+        SystemContractName::new("TokenHubContract".to_string(), TOKEN_HUB_CONTRACT.to_string()),
         SystemContractName::new(
             "RelayerIncentivizeContract".to_string(),
             RELAYER_INCENTIVIZE_CONTRACT.to_string(),
         ),
-        SystemContractName::new(
-            "RelayerHubContract".to_string(),
-            RELAYER_HUB_CONTRACT.to_string(),
-        ),
+        SystemContractName::new("RelayerHubContract".to_string(), RELAYER_HUB_CONTRACT.to_string()),
         SystemContractName::new("GovHubContract".to_string(), GOV_HUB_CONTRACT.to_string()),
-        SystemContractName::new(
-            "TokenHubContract".to_string(),
-            TOKEN_HUB_CONTRACT.to_string(),
-        ),
+        SystemContractName::new("TokenHubContract".to_string(), TOKEN_HUB_CONTRACT.to_string()),
         SystemContractName::new(
             "TokenManagerContract".to_string(),
             TOKEN_MANAGER_CONTRACT.to_string(),
         ),
-        SystemContractName::new(
-            "CrossChainContract".to_string(),
-            CROSS_CHAIN_CONTRACT.to_string(),
-        ),
+        SystemContractName::new("CrossChainContract".to_string(), CROSS_CHAIN_CONTRACT.to_string()),
         SystemContractName::new("StakingContract".to_string(), STAKING_CONTRACT.to_string()),
-        SystemContractName::new(
-            "StakeHubContract".to_string(),
-            STAKE_HUB_CONTRACT.to_string(),
-        ),
+        SystemContractName::new("StakeHubContract".to_string(), STAKE_HUB_CONTRACT.to_string()),
         SystemContractName::new(
             "StakeCreditContract".to_string(),
             STAKE_CREDIT_CONTRACT.to_string(),
         ),
-        SystemContractName::new(
-            "GovTokenContract".to_string(),
-            GOV_TOKEN_CONTRACT.to_string(),
-        ),
-        SystemContractName::new(
-            "GovernorContract".to_string(),
-            GOVERNOR_CONTRACT.to_string(),
-        ),
-        SystemContractName::new(
-            "TimelockContract".to_string(),
-            TIMELOCK_CONTRACT.to_string(),
-        ),
+        SystemContractName::new("GovTokenContract".to_string(), GOV_TOKEN_CONTRACT.to_string()),
+        SystemContractName::new("GovernorContract".to_string(), GOVERNOR_CONTRACT.to_string()),
+        SystemContractName::new("TimelockContract".to_string(), TIMELOCK_CONTRACT.to_string()),
         SystemContractName::new(
             "TokenRecoverPortalContract".to_string(),
             TOKEN_RECOVER_PORTAL_CONTRACT.to_string(),
@@ -429,8 +381,8 @@ where
 {
     let mut m = HashMap::new();
     for (fork, condition) in spec.forks_iter() {
-        if condition.transitions_at_block(block_number)
-            || condition.transitions_at_timestamp(block_time, parent_block_time)
+        if condition.transitions_at_block(block_number) ||
+            condition.transitions_at_timestamp(block_time, parent_block_time)
         {
             if let Ok(contracts) = get_system_contract_codes(spec, fork.name()) {
                 for (k, v) in &contracts {
