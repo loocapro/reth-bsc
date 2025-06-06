@@ -359,11 +359,14 @@ where
         }
         let result_and_state = self
             .evm
-            .transact(tx)
+            .transact_raw(tx.into_tx_env())
             .map_err(|err| BlockExecutionError::evm(err, tx.tx().trie_hash()))?;
         let ResultAndState { result, state } = result_and_state;
         f(&result);
         let gas_used = result.gas_used();
+
+        dbg!("gas_used: {}", gas_used);
+        dbg!("signer: {:?}", tx.signer());
         self.gas_used += gas_used;
         self.receipts.push(self.receipt_builder.build_receipt(ReceiptBuilderCtx {
             tx: tx.tx(),

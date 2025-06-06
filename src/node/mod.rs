@@ -27,6 +27,7 @@ use reth::{
 use reth_engine_primitives::BeaconConsensusEngineHandle;
 use reth_node_ethereum::node::EthereumPoolBuilder;
 use reth_primitives::BlockBody;
+use reth_provider::providers::ProviderFactoryBuilder;
 use reth_trie_db::MerklePatriciaTrie;
 use std::sync::Arc;
 use tokio::sync::{oneshot, Mutex};
@@ -79,6 +80,10 @@ impl BscNode {
             .payload(BscPayloadServiceBuilder::default())
             .network(BscNetworkBuilder { engine_handle_rx: self.engine_handle_rx.clone() })
             .consensus(BscConsensusBuilder::default())
+    }
+
+    pub fn provider_factory_builder() -> ProviderFactoryBuilder<Self> {
+        ProviderFactoryBuilder::default()
     }
 }
 
