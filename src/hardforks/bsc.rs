@@ -52,6 +52,8 @@ hardfork!(
         Pascal,
         /// BSC `Lorentz` hardfork
         Lorentz,
+        /// BSC `Maxwell` hardfork
+        Maxwell,
     }
 );
 
@@ -227,6 +229,7 @@ impl BscHardfork {
             (EthereumHardfork::Prague.boxed(), ForkCondition::Timestamp(1742436600)),
             (Self::Pascal.boxed(), ForkCondition::Timestamp(1742436600)),
             (Self::Lorentz.boxed(), ForkCondition::Timestamp(1745903100)),
+            (Self::Maxwell.boxed(), ForkCondition::Timestamp(1751250600)),
         ])
     }
 

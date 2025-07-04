@@ -32,7 +32,7 @@ pub fn bsc_mainnet() -> ChainSpec {
 }
 
 pub fn head() -> Head {
-    Head { number: 40_000_000, timestamp: 1745903100, ..Default::default() }
+    Head { number: 40_000_000, timestamp: 1751250600, ..Default::default() }
 }
 
 #[cfg(test)]
@@ -43,7 +43,7 @@ mod tests {
 
     #[test]
     fn can_create_forkid() {
-        let b = hex::decode("3bfc8c16").unwrap();
+        let b = hex::decode("098d24ac").unwrap();
         let expected = [b[0], b[1], b[2], b[3]];
         let expected_f_id = ForkId { hash: ForkHash(expected), next: 0 };
 
