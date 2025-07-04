@@ -331,6 +331,7 @@ where
     <E as alloy_evm::Evm>::Tx: FromTxWithEncoded<<R as ReceiptBuilder>::Transaction>,
     BscTxEnv<TxEnv>: IntoTxEnv<<E as alloy_evm::Evm>::Tx>,
     R::Transaction: Into<TransactionSigned>,
+    R::Receipt: serde::Serialize,
 {
     type Transaction = TransactionSigned;
     type Receipt = R::Receipt;
@@ -393,8 +394,6 @@ where
 
         let gas_used = result.gas_used();
 
-        dbg!(gas_used);
-        dbg!(tx.signer());
         self.gas_used += gas_used;
         let receipt = self.receipt_builder.build_receipt(ReceiptBuilderCtx {
             tx: tx.tx(),
@@ -403,7 +402,6 @@ where
             state: &state,
             cumulative_gas_used: self.gas_used,
         });
-        dbg!(&receipt);
         self.receipts.push(receipt);
         self.evm.db_mut().commit(state);
 
@@ -447,6 +445,9 @@ where
         // TODO:
         // Consensus: Slash validator if not in turn
         // Consensus: Update validator set
+
+        let json_receipts = serde_json::to_string(&self.receipts).unwrap();
+        println!("{}", json_receipts);
 
         Ok((
             self.evm,

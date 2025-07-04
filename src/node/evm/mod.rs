@@ -96,13 +96,6 @@ where
         &mut self,
         tx: Self::Tx,
     ) -> Result<ResultAndState<Self::HaltReason>, Self::Error> {
-        let block = self.block();
-        let cfg = self.cfg.clone();
-        let chain = self.chain;
-        dbg!(&block);
-        dbg!(&cfg);
-        dbg!(&chain);
-        dbg!(&tx);
         if self.inspect {
             self.inner.set_tx(tx);
             self.inner.inspect_replay()

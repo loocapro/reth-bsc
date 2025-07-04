@@ -109,6 +109,7 @@ where
     R::Transaction: From<TransactionSigned> + Clone,
     Self: 'static,
     BscTxEnv<TxEnv>: IntoTxEnv<<EvmF as EvmFactory>::Tx>,
+    R::Receipt: serde::Serialize,
 {
     type EvmFactory = EvmF;
     type ExecutionCtx<'a> = EthBlockExecutionCtx<'a>;
