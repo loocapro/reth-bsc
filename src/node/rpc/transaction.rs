@@ -1,5 +1,6 @@
 use super::BscNodeCore;
 use crate::node::rpc::BscEthApi;
+use alloy_network::Ethereum;
 use alloy_primitives::{Bytes, B256};
 use reth::{
     rpc::server_types::eth::utils::recover_raw_transaction,
@@ -7,7 +8,7 @@ use reth::{
 };
 use reth_provider::{BlockReader, BlockReaderIdExt, ProviderTx, TransactionsProvider};
 use reth_rpc_eth_api::{
-    helpers::{EthSigner, EthTransactions, LoadTransaction, SpawnBlocking},
+    helpers::{spec::SignersForRpc, EthTransactions, LoadTransaction, SpawnBlocking},
     FromEthApiError, FullEthApiTypes, RpcNodeCore, RpcNodeCoreExt,
 };
 impl<N> LoadTransaction for BscEthApi<N>
@@ -20,10 +21,10 @@ where
 
 impl<N> EthTransactions for BscEthApi<N>
 where
-    Self: LoadTransaction<Provider: BlockReaderIdExt>,
+    Self: LoadTransaction<Provider: BlockReaderIdExt, NetworkTypes = Ethereum>,
     N: BscNodeCore<Provider: BlockReader<Transaction = ProviderTx<Self::Provider>>>,
 {
-    fn signers(&self) -> &parking_lot::RwLock<Vec<Box<dyn EthSigner<ProviderTx<Self::Provider>>>>> {
+    fn signers(&self) -> &SignersForRpc<Self::Provider, Self::NetworkTypes> {
         self.inner.eth_api.signers()
     }
 

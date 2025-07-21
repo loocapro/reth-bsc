@@ -80,44 +80,36 @@ fn double_sign_evidence_validation_run(input: &[u8], gas_limit: u64) -> Precompi
         return Err(PrecompileError::OutOfGas);
     }
 
-    let evidence = match DoubleSignEvidence::decode(&mut input.iter().as_ref()) {
-        Ok(e) => e,
-        Err(_) => {
-            return Err(BscPrecompileError::Reverted(DOUBLE_SIGN_EVIDENCE_VALIDATION_BASE).into())
-        }
+    let revert = || {
+        Ok(PrecompileOutput::new_reverted(DOUBLE_SIGN_EVIDENCE_VALIDATION_BASE, Default::default()))
     };
 
-    let header1 = match Header::decode(&mut evidence.header_bytes1.as_ref()) {
-        Ok(e) => e,
-        Err(_) => {
-            return Err(BscPrecompileError::Reverted(DOUBLE_SIGN_EVIDENCE_VALIDATION_BASE).into())
-        }
+    let Ok(evidence) = DoubleSignEvidence::decode(&mut input.iter().as_ref()) else {
+        return revert()
     };
-    let header2 = match Header::decode(&mut evidence.header_bytes2.as_ref()) {
-        Ok(e) => e,
-        Err(_) => {
-            return Err(BscPrecompileError::Reverted(DOUBLE_SIGN_EVIDENCE_VALIDATION_BASE).into())
-        }
-    };
+
+    let Ok(header1) = Header::decode(&mut evidence.header_bytes1.as_ref()) else { return revert() };
+
+    let Ok(header2) = Header::decode(&mut evidence.header_bytes2.as_ref()) else { return revert() };
 
     // basic check
     if header1.number.to_be_bytes().len() > 32 || header2.number.to_be_bytes().len() > 32 {
-        return Err(BscPrecompileError::Reverted(DOUBLE_SIGN_EVIDENCE_VALIDATION_BASE).into());
+        return revert()
     }
     if header1.number != header2.number {
-        return Err(BscPrecompileError::Reverted(DOUBLE_SIGN_EVIDENCE_VALIDATION_BASE).into());
+        return revert()
     }
     if header1.parent_hash.cmp(&header2.parent_hash) != Ordering::Equal {
-        return Err(BscPrecompileError::Reverted(DOUBLE_SIGN_EVIDENCE_VALIDATION_BASE).into());
+        return revert()
     }
 
     if header1.extra.len() < EXTRA_SEAL_LENGTH || header1.extra.len() < EXTRA_SEAL_LENGTH {
-        return Err(BscPrecompileError::Reverted(DOUBLE_SIGN_EVIDENCE_VALIDATION_BASE).into());
+        return revert()
     }
     let sig1 = &header1.extra[header1.extra.len() - EXTRA_SEAL_LENGTH..];
     let sig2 = &header2.extra[header2.extra.len() - EXTRA_SEAL_LENGTH..];
     if sig1.eq(sig2) {
-        return Err(BscPrecompileError::Reverted(DOUBLE_SIGN_EVIDENCE_VALIDATION_BASE).into());
+        return revert()
     }
 
     // check signature
@@ -125,29 +117,19 @@ fn double_sign_evidence_validation_run(input: &[u8], gas_limit: u64) -> Precompi
     let msg_hash2 = seal_hash(&header2, evidence.chain_id);
 
     if msg_hash1.eq(&msg_hash2) {
-        return Err(BscPrecompileError::Reverted(DOUBLE_SIGN_EVIDENCE_VALIDATION_BASE).into());
+        return revert()
     }
 
     let recid1 = sig1[64];
     let sig1 = <&B512>::try_from(&sig1[..64]).unwrap();
-    let addr1 = match secp256k1::ecrecover(sig1, recid1, &msg_hash1) {
-        Ok(pk) => pk,
-        Err(_) => {
-            return Err(BscPrecompileError::Reverted(DOUBLE_SIGN_EVIDENCE_VALIDATION_BASE).into())
-        }
-    };
+    let Ok(addr1) = secp256k1::ecrecover(sig1, recid1, &msg_hash1) else { return revert() };
 
     let recid2 = sig2[64];
     let sig2 = <&B512>::try_from(&sig2[..64]).unwrap();
-    let addr2 = match secp256k1::ecrecover(sig2, recid2, &msg_hash2) {
-        Ok(pk) => pk,
-        Err(_) => {
-            return Err(BscPrecompileError::Reverted(DOUBLE_SIGN_EVIDENCE_VALIDATION_BASE).into())
-        }
-    };
+    let Ok(addr2) = secp256k1::ecrecover(sig2, recid2, &msg_hash2) else { return revert() };
 
     if !addr1.eq(&addr2) {
-        return Err(BscPrecompileError::Reverted(DOUBLE_SIGN_EVIDENCE_VALIDATION_BASE).into());
+        return revert()
     }
 
     let mut res = [0; 52];

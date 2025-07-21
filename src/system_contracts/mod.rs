@@ -1,8 +1,7 @@
 #![allow(missing_docs)]
 //! Credits to <https://github.com/bnb-chain/reth/blob/main/crates/bsc/primitives/src/system_contracts/mod.rs>
 use crate::{
-    chainspec::bsc::bsc_mainnet,
-    chainspec::bsc_chapel::bsc_testnet,
+    chainspec::{bsc::bsc_mainnet, bsc_chapel::bsc_testnet},
     hardforks::{bsc::BscHardfork, BscHardforks},
 };
 use abi::{STAKE_HUB_ABI, VALIDATOR_SET_ABI};

@@ -29,6 +29,7 @@ use reth_rpc_eth_api::{
     types::RpcTypes,
     FromEthApiError, RpcConvert, RpcNodeCore, RpcNodeCoreExt, RpcReceipt,
 };
+use std::borrow::Cow;
 
 impl<N> EthBlocks for BscEthApi<N>
 where
@@ -68,7 +69,14 @@ where
                         excess_blob_gas,
                         timestamp,
                     };
-                    Ok(EthReceiptBuilder::new(tx, meta, receipt, &receipts, blob_params).build())
+                    Ok(EthReceiptBuilder::new(
+                        tx,
+                        meta,
+                        Cow::Borrowed(receipt),
+                        &receipts,
+                        blob_params,
+                    )
+                    .build())
                 })
                 .collect::<Result<Vec<_>, Self::Error>>()
                 .map(Some)
@@ -164,7 +172,7 @@ where
             // Note: we assume this transaction is valid, because it's mined and therefore valid
             tx.try_into_recovered_unchecked()?.as_recovered_ref(),
             meta,
-            &receipt,
+            Cow::Borrowed(&receipt),
             &all_receipts,
             blob_params,
         )

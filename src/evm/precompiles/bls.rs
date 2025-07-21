@@ -28,12 +28,14 @@ fn bls_signature_validation_run(input: &[u8], gas_limit: u64) -> PrecompileResul
         return Err(PrecompileError::OutOfGas);
     }
 
+    let revert = || Ok(PrecompileOutput::new_reverted(cost, Default::default()));
+
     let msg_and_sig_length = BLS_MSG_HASH_LENGTH + BLS_SIGNATURE_LENGTH;
     let input_length = input.len() as u64;
     if (input_length <= msg_and_sig_length) ||
         !((input_length - msg_and_sig_length).is_multiple_of(BLS_SINGLE_PUBKEY_LENGTH))
     {
-        return Err(BscPrecompileError::Reverted(cost).into());
+        return revert()
     }
 
     let msg_hash: &Vec<u8> = &input[..BLS_MSG_HASH_LENGTH as usize].to_vec();
@@ -42,7 +44,7 @@ fn bls_signature_validation_run(input: &[u8], gas_limit: u64) -> PrecompileResul
 
     // check signature format
     if bls::signature_to_point(&signature.to_vec()).is_err() {
-        return Err(BscPrecompileError::Reverted(cost).into());
+        return revert()
     }
 
     let pub_key_count = (input_length - msg_and_sig_length) / BLS_SINGLE_PUBKEY_LENGTH;
@@ -54,13 +56,13 @@ fn bls_signature_validation_run(input: &[u8], gas_limit: u64) -> PrecompileResul
         let pub_key = &pub_keys_data[i as usize * BLS_SINGLE_PUBKEY_LENGTH as usize..
             (i + 1) as usize * BLS_SINGLE_PUBKEY_LENGTH as usize];
         if !bls::key_validate(&pub_key.to_vec()) {
-            return Err(BscPrecompileError::Reverted(cost).into());
+            return revert()
         }
         pub_keys.push(pub_key.to_vec());
         msg_hashes.push(msg_hash.clone().to_vec());
     }
     if pub_keys.is_empty() {
-        return Err(BscPrecompileError::Reverted(cost).into());
+        return revert()
     }
 
     // verify signature
@@ -141,8 +143,8 @@ mod tests {
         input.extend_from_slice(&pub_key);
 
         match bls_signature_validation_run(&Bytes::from(input.clone()), 100_000_000) {
-            Ok(_) => panic!("BLS signature validation failed, expect error"),
-            Err(e) => assert_eq!(e, BscPrecompileError::Reverted(4500).into()),
+            Ok(res) => assert_eq!(res, PrecompileOutput::new_reverted(4500, Default::default())),
+            Err(e) => panic!("BLS signature validation failed, expect error"),
         }
 
         // wrong pubkey
@@ -155,8 +157,8 @@ mod tests {
         input.extend_from_slice(&pub_key);
 
         match bls_signature_validation_run(&Bytes::from(input.clone()), 100_000_000) {
-            Ok(_) => panic!("BLS signature validation failed, expect error"),
-            Err(e) => assert_eq!(e, BscPrecompileError::Reverted(4500).into()),
+            Ok(res) => assert_eq!(res, PrecompileOutput::new_reverted(4500, Default::default())),
+            Err(e) => panic!("BLS signature validation failed, expect error"),
         }
     }
 
@@ -214,8 +216,8 @@ mod tests {
         input.extend_from_slice(&pub_key3);
 
         match bls_signature_validation_run(&Bytes::from(input.clone()), 100_000_000) {
-            Ok(_) => panic!("BLS signature validation failed, expect error"),
-            Err(e) => assert_eq!(e, BscPrecompileError::Reverted(11500).into()),
+            Ok(res) => assert_eq!(res, PrecompileOutput::new_reverted(4500, Default::default())),
+            Err(e) => panic!("BLS signature validation failed, expect error"),
         }
 
         // invalid pubkey
@@ -232,8 +234,8 @@ mod tests {
         input.extend_from_slice(&pub_key3);
 
         match bls_signature_validation_run(&Bytes::from(input.clone()), 100_000_000) {
-            Ok(_) => panic!("BLS signature validation failed, expect error"),
-            Err(e) => assert_eq!(e, BscPrecompileError::Reverted(11500).into()),
+            Ok(res) => assert_eq!(res, PrecompileOutput::new_reverted(11500, Default::default())),
+            Err(e) => panic!("BLS signature validation failed, expect error"),
         }
 
         // duplicate pubkey

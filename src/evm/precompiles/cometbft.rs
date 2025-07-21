@@ -90,13 +90,13 @@ fn convert_light_block_from_proto(light_block_proto: &TmLightBlock) -> ConvertLi
     let signed_header =
         match SignedHeader::try_from(light_block_proto.signed_header.as_ref().unwrap().clone()) {
             Ok(sh) => sh.clone(),
-            Err(_) => return Err(BscPrecompileError::CometBftInvalidInput.into()),
+            Err(_) => return Err(BscPrecompileError::InvalidInput.into()),
         };
 
     let validator_set =
         match Set::try_from(light_block_proto.validator_set.as_ref().unwrap().clone()) {
             Ok(vs) => vs.clone(),
-            Err(_) => return Err(BscPrecompileError::CometBftInvalidInput.into()),
+            Err(_) => return Err(BscPrecompileError::InvalidInput.into()),
         };
 
     let next_validator_set = validator_set.clone();
@@ -108,7 +108,7 @@ type DecodeLightBlockResult = Result<(ConsensusState, TmLightBlock), PrecompileE
 fn decode_light_block_validation_input(input: &[u8]) -> DecodeLightBlockResult {
     let input_length = input.len() as u64;
     if input_length < CONSENSUS_STATE_LENGTH_BYTES_LENGTH {
-        return Err(BscPrecompileError::CometBftInvalidInput.into());
+        return Err(BscPrecompileError::InvalidInput.into());
     }
 
     let cs_length = u64::from_be_bytes(
@@ -120,11 +120,11 @@ fn decode_light_block_validation_input(input: &[u8]) -> DecodeLightBlockResult {
     let input_length_checked = CONSENSUS_STATE_LENGTH_BYTES_LENGTH.checked_add(cs_length);
     if input_length_checked.is_none() {
         // overflow
-        return Err(BscPrecompileError::CometBftInvalidInput.into());
+        return Err(BscPrecompileError::InvalidInput.into());
     }
 
     if input_length < input_length_checked.unwrap() {
-        return Err(BscPrecompileError::CometBftInvalidInput.into());
+        return Err(BscPrecompileError::InvalidInput.into());
     }
 
     let decode_input = Bytes::from(
@@ -139,7 +139,7 @@ fn decode_light_block_validation_input(input: &[u8]) -> DecodeLightBlockResult {
         .merge(&input[CONSENSUS_STATE_LENGTH_BYTES_LENGTH as usize + cs_length as usize..])
     {
         Ok(pb) => pb,
-        Err(_) => return Err(BscPrecompileError::CometBftInvalidInput.into()),
+        Err(_) => return Err(BscPrecompileError::InvalidInput.into()),
     };
 
     Ok((consensus_state, light_block_pb))
@@ -164,10 +164,10 @@ impl ConsensusState {
 
     fn apply_light_block(&mut self, light_block: &LightBlock) -> Result<bool, PrecompileError> {
         if light_block.height().value() <= self.height {
-            return Err(BscPrecompileError::CometBftInvalidInput.into());
+            return Err(BscPrecompileError::InvalidInput.into());
         }
         if light_block.signed_header.header().chain_id.as_str() != self.chain_id {
-            return Err(BscPrecompileError::CometBftInvalidInput.into());
+            return Err(BscPrecompileError::InvalidInput.into());
         }
 
         let vp = ProdPredicates;
@@ -300,7 +300,7 @@ fn decode_consensus_state(input: &Bytes) -> DecodeConsensusStateResult {
     if input_length <= minimum_length ||
         !(input_length - minimum_length).is_multiple_of(SINGLE_VALIDATOR_BYTES_LENGTH)
     {
-        return Err(BscPrecompileError::CometBftInvalidInput.into());
+        return Err(BscPrecompileError::InvalidInput.into());
     }
 
     let mut pos = 0_u64;
@@ -344,7 +344,7 @@ fn decode_consensus_state(input: &Bytes) -> DecodeConsensusStateResult {
         );
         let pk = match PublicKey::from_raw_ed25519(&validator[..VALIDATOR_PUBKEY_LENGTH as usize]) {
             Some(pk) => pk,
-            None => return Err(BscPrecompileError::CometBftInvalidInput.into()),
+            None => return Err(BscPrecompileError::InvalidInput.into()),
         };
         let vp = Power::from(voting_power as u32);
         let validator_info = Validator::new_with_bls_and_relayer(
@@ -395,12 +395,13 @@ mod tests {
             ));
 
             let result = cometbft_light_block_validation_run(&input, 100_000);
-            let PrecompileOutput { gas_used, bytes } = match result {
+            let PrecompileOutput { gas_used, bytes, reverted } = match result {
                 Ok(output) => output,
                 Err(_) => panic!("cometbft_light_block_validation_run failed"),
             };
             assert_eq!(gas_used, 3_000);
             assert_eq!(bytes, except_output);
+            assert!(!reverted);
         }
         // apply light block failed
         {
@@ -419,7 +420,7 @@ mod tests {
             ));
 
             let result = cometbft_light_block_validation_run(&input, 100_000);
-            let expected = Err(BscPrecompileError::CometBftInvalidInput.into());
+            let expected = Err(BscPrecompileError::InvalidInput.into());
             assert_eq!(result, expected);
         }
         // chain id mismatch
@@ -429,7 +430,7 @@ mod tests {
             ));
 
             let result = cometbft_light_block_validation_run(&input, 100_000);
-            let expected = Err(BscPrecompileError::CometBftInvalidInput.into());
+            let expected = Err(BscPrecompileError::InvalidInput.into());
             assert_eq!(result, expected);
         }
     }
@@ -680,11 +681,12 @@ mod tests {
         ));
 
         let result = cometbft_light_block_validation_run_before_hertz(&input, 100_000);
-        let PrecompileOutput { gas_used, bytes } = match result {
+        let PrecompileOutput { gas_used, bytes, reverted } = match result {
             Ok(output) => output,
             Err(_) => panic!("cometbft_light_block_validation_run failed"),
         };
         assert_eq!(gas_used, 3_000);
         assert_eq!(bytes, except_output_after_hertz);
+        assert!(!reverted);
     }
 }

@@ -1,6 +1,7 @@
 use alloy_network::Ethereum;
 use alloy_primitives::U256;
 use reth::{
+    api::NodeTypes,
     builder::{
         rpc::{EthApiBuilder, EthApiCtx},
         FullNodeComponents,
@@ -21,10 +22,10 @@ use reth::{
 use reth_evm::ConfigureEvm;
 use reth_network::NetworkInfo;
 use reth_optimism_rpc::eth::EthApiNodeBackend;
-use reth_primitives::NodePrimitives;
+use reth_primitives::{NodePrimitives, TransactionSigned};
 use reth_provider::{
     BlockNumReader, BlockReader, BlockReaderIdExt, ProviderBlock, ProviderHeader, ProviderReceipt,
-    ProviderTx, StageCheckpointReader, StateProviderFactory,
+    ProviderTx, StageCheckpointReader, StateProviderFactory, TransactionsProvider,
 };
 use reth_rpc_eth_api::{
     helpers::{
@@ -53,7 +54,7 @@ impl<T> BscNodeCore for T where T: RpcNodeCore<Provider: BlockReader> {}
 #[allow(missing_debug_implementations)]
 pub(crate) struct BscEthApiInner<N: BscNodeCore> {
     /// Gateway to node's core components.
-    pub(crate) eth_api: EthApiNodeBackend<N>,
+    pub(crate) eth_api: EthApiNodeBackend<N, Ethereum>,
 }
 
 #[derive(Clone)]
@@ -141,6 +142,7 @@ where
     >,
 {
     type Transaction = ProviderTx<Self::Provider>;
+    type Rpc = Ethereum;
 
     #[inline]
     fn starting_block(&self) -> U256 {
@@ -242,7 +244,7 @@ where
 
 impl<N> AddDevSigners for BscEthApi<N>
 where
-    N: BscNodeCore,
+    N: BscNodeCore<Provider: TransactionsProvider<Transaction = TransactionSigned>>,
 {
     fn with_dev_accounts(&self) {
         *self.inner.eth_api.signers().write() = DevSigner::random_signers(20)
@@ -256,7 +258,7 @@ pub struct BscEthApiBuilder;
 
 impl<N> EthApiBuilder<N> for BscEthApiBuilder
 where
-    N: FullNodeComponents,
+    N: FullNodeComponents<Types: NodeTypes<Primitives = BscPrimitives>>,
     BscEthApi<N>: FullEthApiServer<Provider = N::Provider, Pool = N::Pool>,
 {
     type EthApi = BscEthApi<N>;
