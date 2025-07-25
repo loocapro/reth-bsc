@@ -102,22 +102,22 @@ fn double_sign_evidence_validation_run(input: &[u8], gas_limit: u64) -> Precompi
 
     // basic check
     if header1.number.to_be_bytes().len() > 32 || header2.number.to_be_bytes().len() > 32 {
-        return Err(BscPrecompileError::Reverted(DOUBLE_SIGN_EVIDENCE_VALIDATION_BASE).into());
+        return Err(BscPrecompileError::DoubleSignInvalidEvidence.into());
     }
     if header1.number != header2.number {
-        return Err(BscPrecompileError::Reverted(DOUBLE_SIGN_EVIDENCE_VALIDATION_BASE).into());
+        return Err(BscPrecompileError::DoubleSignInvalidEvidence.into());
     }
     if header1.parent_hash.cmp(&header2.parent_hash) != Ordering::Equal {
-        return Err(BscPrecompileError::Reverted(DOUBLE_SIGN_EVIDENCE_VALIDATION_BASE).into());
+        return Err(BscPrecompileError::DoubleSignInvalidEvidence.into());
     }
 
     if header1.extra.len() < EXTRA_SEAL_LENGTH || header1.extra.len() < EXTRA_SEAL_LENGTH {
-        return Err(BscPrecompileError::Reverted(DOUBLE_SIGN_EVIDENCE_VALIDATION_BASE).into());
+        return Err(BscPrecompileError::DoubleSignInvalidEvidence.into());
     }
     let sig1 = &header1.extra[header1.extra.len() - EXTRA_SEAL_LENGTH..];
     let sig2 = &header2.extra[header2.extra.len() - EXTRA_SEAL_LENGTH..];
     if sig1.eq(sig2) {
-        return Err(BscPrecompileError::Reverted(DOUBLE_SIGN_EVIDENCE_VALIDATION_BASE).into());
+        return Err(BscPrecompileError::DoubleSignInvalidEvidence.into());
     }
 
     // check signature
@@ -125,7 +125,7 @@ fn double_sign_evidence_validation_run(input: &[u8], gas_limit: u64) -> Precompi
     let msg_hash2 = seal_hash(&header2, evidence.chain_id);
 
     if msg_hash1.eq(&msg_hash2) {
-        return Err(BscPrecompileError::Reverted(DOUBLE_SIGN_EVIDENCE_VALIDATION_BASE).into());
+        return Err(BscPrecompileError::DoubleSignInvalidEvidence.into());
     }
 
     let recid1 = sig1[64];
@@ -147,7 +147,7 @@ fn double_sign_evidence_validation_run(input: &[u8], gas_limit: u64) -> Precompi
     };
 
     if !addr1.eq(&addr2) {
-        return Err(BscPrecompileError::Reverted(DOUBLE_SIGN_EVIDENCE_VALIDATION_BASE).into());
+        return Err(PrecompileError::other("invalid evidence"));
     }
 
     let mut res = [0; 52];

@@ -13,21 +13,18 @@ pub enum BscPrecompileError {
     /// This is for BSC EVM compatibility specially.
     /// This error will not consume all gas but only the returned amount.
     Reverted(u64),
+    /// The double sing invalid evidence.
+    DoubleSignInvalidEvidence,
 }
 
 impl From<BscPrecompileError> for PrecompileError {
     fn from(error: BscPrecompileError) -> Self {
         match error {
-            BscPrecompileError::CometBftInvalidInput => {
-                PrecompileError::Other("invalid input".to_string())
-            }
-            BscPrecompileError::CometBftApplyBlockFailed => {
-                PrecompileError::Other("apply block failed".to_string())
-            }
-            BscPrecompileError::CometBftEncodeConsensusStateFailed => {
-                PrecompileError::Other("encode consensus state failed".to_string())
-            }
+            BscPrecompileError::CometBftInvalidInput => PrecompileError::Other("invalid input".to_string()),
+            BscPrecompileError::CometBftApplyBlockFailed => PrecompileError::Other("apply block failed".to_string()),
+            BscPrecompileError::CometBftEncodeConsensusStateFailed => PrecompileError::Other("encode consensus state failed".to_string()),
             BscPrecompileError::Reverted(gas) => PrecompileError::Other(format!("Reverted({gas})")),
+            BscPrecompileError::DoubleSignInvalidEvidence => PrecompileError::Other("invalid evidence".to_string()),
         }
     }
 }
