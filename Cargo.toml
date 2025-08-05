@@ -122,6 +122,12 @@ dev = [
     "revm/dev",
 ]
 
+asm-keccak = [
+    "reth-node-core/asm-keccak",
+    "reth-primitives/asm-keccak",
+    "reth-node-ethereum/asm-keccak",
+]
+
 serde = [
     "alloy-chains/serde",
     "alloy-consensus/serde",
