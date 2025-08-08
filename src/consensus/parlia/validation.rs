@@ -164,20 +164,34 @@ where
             hex::encode(signature)
         );
         
+        // DEBUG: Extra verification of slice bounds
+        let expected_signature_start = extra_data.len() - 65;
+        tracing::debug!(
+            "🔐 [BSC] Signature slice bounds for block {}: expected_start={}, actual_slice_len={}, extra_last_10_bytes={}",
+            header.number(),
+            expected_signature_start,
+            signature.len(),
+            hex::encode(&extra_data[extra_data.len().saturating_sub(10)..])
+        );
+        
         // Parse signature: 64 bytes + 1 recovery byte
+        if signature.len() != 65 {
+            return Err(ConsensusError::Other(format!("Invalid signature length: expected 65, got {}", signature.len()).into()));
+        }
+        
         let sig_bytes = &signature[..64];
         let recovery_id = signature[64];
         
-        // DEBUG: Add detailed logging for signature recovery
+        // DEBUG: Verify the slicing worked correctly
         tracing::debug!(
-            "🔐 [BSC] Seal recovery for block {}: extra_data_len={}, seal_hash={:?}, recovery_id={}, sig_bytes_len={}, expected_miner={}",
+            "🔐 [BSC] Signature parsing for block {}: sig_bytes_len={}, recovery_id={}, sig_bytes_hex={}",
             header.number(),
-            extra_data.len(),
-            seal_hash,
-            recovery_id,
             sig_bytes.len(),
-            header.beneficiary()
+            recovery_id,
+            hex::encode(sig_bytes)
         );
+        
+        // (Removed duplicate debug line - using the new one above instead)
         
         // Handle recovery ID (bsc-erigon compatible)
         let recovery_id = RecoveryId::from_i32(recovery_id as i32)
