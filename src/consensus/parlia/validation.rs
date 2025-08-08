@@ -158,6 +158,17 @@ where
         let sig_bytes = &signature[..64];
         let recovery_id = signature[64];
         
+        // DEBUG: Add detailed logging for signature recovery
+        tracing::debug!(
+            "🔐 [BSC] Seal recovery for block {}: extra_data_len={}, seal_hash={:?}, recovery_id={}, sig_bytes_len={}, expected_miner={}",
+            header.number(),
+            extra_data.len(),
+            seal_hash,
+            recovery_id,
+            sig_bytes.len(),
+            header.beneficiary()
+        );
+        
         // Handle recovery ID (bsc-erigon compatible)
         let recovery_id = RecoveryId::from_i32(recovery_id as i32)
             .map_err(|_| ConsensusError::Other("Invalid recovery ID".into()))?;
@@ -175,7 +186,13 @@ where
         let hash = keccak256(&public_key_bytes[1..]); // Skip 0x04 prefix
         let address = Address::from_slice(&hash[12..]);
         
-
+        tracing::debug!(
+            "🔐 [BSC] Seal recovery result for block {}: recovered_address={}, expected_miner={}, match={}",
+            header.number(),
+            address,
+            header.beneficiary(),
+            address == header.beneficiary()
+        );
         
         Ok(address)
     }
@@ -198,7 +215,6 @@ where
         };
         
         // Create SealContent exactly like double_sign precompile
-        
         let seal_content = crate::evm::precompiles::double_sign::SealContent {
             chain_id,
             parent_hash: header.parent_hash().0,
@@ -218,11 +234,25 @@ where
             nonce: header.nonce().unwrap_or_default().0,
         };
         
+        // Debug logging for seal hash calculation
+        tracing::debug!(
+            "🔐 [BSC] Seal hash calculation for block {}: chain_id={}, extra_len={}, extra_without_seal_len={}",
+            header.number(),
+            chain_id,
+            extra_data.len(),
+            extra_without_seal.len()
+        );
+        
         // Use automatic RLP encoding like double_sign precompile
         let encoded = alloy_rlp::encode(seal_content);
         let result = keccak256(&encoded);
         
-
+        tracing::debug!(
+            "🔐 [BSC] Seal hash result for block {}: hash={:?}, encoded_len={}",
+            header.number(),
+            result,
+            encoded.len()
+        );
         
         result
     }
