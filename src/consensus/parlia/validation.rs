@@ -241,25 +241,45 @@ where
         // Encode directly as slice like bsc-erigon does (NOT using SealContent struct)
         // This matches bsc-erigon's EncodeSigHeader function exactly
         
-        // Create a vector of all the fields to encode (matching Go's []interface{})
-        let fields = vec![
-            alloy_rlp::encode(&chain_id),
-            alloy_rlp::encode(&header.parent_hash()),
-            alloy_rlp::encode(&header.ommers_hash()),
-            alloy_rlp::encode(&header.beneficiary()),
-            alloy_rlp::encode(&header.state_root()),
-            alloy_rlp::encode(&header.transactions_root()),
-            alloy_rlp::encode(&header.receipts_root()),
-            alloy_rlp::encode(&header.logs_bloom()),
-            alloy_rlp::encode(&header.difficulty()),
-            alloy_rlp::encode(&header.number()),
-            alloy_rlp::encode(&header.gas_limit()),
-            alloy_rlp::encode(&header.gas_used()),
-            alloy_rlp::encode(&header.timestamp()),
-            alloy_rlp::encode(&alloy_primitives::Bytes::from(extra_without_seal.to_vec())),
-            alloy_rlp::encode(&header.mix_hash().unwrap_or_default()),
-            alloy_rlp::encode(&header.nonce().unwrap_or_default()),
-        ];
+        // Create a custom struct that exactly matches bsc-erigon's field ordering
+        #[derive(alloy_rlp::RlpEncodable)]
+        struct HeaderForSeal {
+            chain_id: u64,
+            parent_hash: alloy_primitives::B256,
+            ommers_hash: alloy_primitives::B256,
+            beneficiary: alloy_primitives::Address,
+            state_root: alloy_primitives::B256,
+            transactions_root: alloy_primitives::B256,
+            receipts_root: alloy_primitives::B256,
+            logs_bloom: alloy_primitives::Bloom,
+            difficulty: alloy_primitives::U256,
+            number: u64,
+            gas_limit: u64,
+            gas_used: u64,
+            timestamp: u64,
+            extra_data: alloy_primitives::Bytes,
+            mix_hash: alloy_primitives::B256,
+            nonce: u64,
+        }
+        
+        let header_for_seal = HeaderForSeal {
+            chain_id,
+            parent_hash: header.parent_hash(),
+            ommers_hash: header.ommers_hash(),
+            beneficiary: header.beneficiary(),
+            state_root: header.state_root(),
+            transactions_root: header.transactions_root(),
+            receipts_root: header.receipts_root(),
+            logs_bloom: header.logs_bloom(),
+            difficulty: header.difficulty(),
+            number: header.number(),
+            gas_limit: header.gas_limit(),
+            gas_used: header.gas_used(),
+            timestamp: header.timestamp(),
+            extra_data: alloy_primitives::Bytes::from(extra_without_seal.to_vec()),
+            mix_hash: header.mix_hash().unwrap_or_default(),
+            nonce: header.nonce().unwrap_or_default().into(),
+        };
         
         // Debug logging for seal hash calculation
         tracing::debug!(
@@ -270,8 +290,7 @@ where
             extra_without_seal.len()
         );
         
-        // Encode the list of fields (matching bsc-erigon's []interface{} encoding)
-        let encoded = alloy_rlp::encode(&fields);
+        let encoded = alloy_rlp::encode(&header_for_seal);
         let result = keccak256(&encoded);
         
         tracing::debug!(
