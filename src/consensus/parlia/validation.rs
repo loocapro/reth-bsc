@@ -202,14 +202,14 @@ where
         // Encode directly as slice like bsc-erigon does (NOT using SealContent struct)
         // This matches bsc-erigon's EncodeSigHeader function exactly
         
-        // Copy zoro_reth's exact approach: manual field-by-field encoding
-        // This matches zoro_reth's encode_header_with_chain_id function exactly
+        // manual field-by-field encoding
+        // This matches reth-bsc-trail's encode_header_with_chain_id function exactly
         use alloy_rlp::Encodable;
         use alloy_primitives::{bytes::BytesMut, U256};
         
         let mut out = BytesMut::new();
         
-        // First encode the RLP list header (like zoro_reth's rlp_header function)
+        // First encode the RLP list header (like reth-bsc-trail's rlp_header function)
         let mut rlp_head = alloy_rlp::Header { list: true, payload_length: 0 };
         
         // Calculate payload length for all fields
@@ -230,7 +230,7 @@ where
         rlp_head.payload_length += header.mix_hash().unwrap_or_default().length();
         rlp_head.payload_length += header.nonce().unwrap_or_default().length();
         
-        // Add conditional field lengths for post-4844 blocks (exactly like zoro_reth)
+        // Add conditional field lengths for post-4844 blocks (exactly like reth-bsc-trail)
         if header.parent_beacon_block_root().is_some() &&
             header.parent_beacon_block_root().unwrap() == alloy_primitives::B256::ZERO
         {
@@ -244,7 +244,7 @@ where
         // Encode the RLP list header first
         rlp_head.encode(&mut out);
         
-        // Then encode each field individually (exactly like zoro_reth)
+        // Then encode each field individually (exactly like reth-bsc-trail)
         Encodable::encode(&U256::from(chain_id), &mut out);
         Encodable::encode(&header.parent_hash(), &mut out);
         Encodable::encode(&header.ommers_hash(), &mut out);
@@ -262,7 +262,7 @@ where
         Encodable::encode(&header.mix_hash().unwrap_or_default(), &mut out);
         Encodable::encode(&header.nonce().unwrap_or_default(), &mut out);
         
-        // Add conditional fields for post-4844 blocks (exactly like zoro_reth)
+        // Add conditional fields for post-4844 blocks 
         if header.parent_beacon_block_root().is_some() &&
             header.parent_beacon_block_root().unwrap() == alloy_primitives::B256::ZERO
         {
