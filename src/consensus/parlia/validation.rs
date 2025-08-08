@@ -12,6 +12,7 @@ use reth_chainspec::EthChainSpec;
 use reth_primitives_traits::SealedHeader;
 use std::collections::HashMap;
 use std::sync::Arc;
+use alloy_primitives::hex;
 
 /// BSC consensus validator that implements the missing pre/post execution logic
 #[derive(Debug, Clone)]
@@ -154,6 +155,15 @@ where
         let seal_hash = self.calculate_seal_hash(header);
         let message = Message::from_digest(seal_hash.0);
         
+        // DEBUG: Add detailed logging for signature extraction
+        tracing::debug!(
+            "🔐 [BSC] Signature extraction for block {}: extra_data_len={}, signature_len={}, signature_hex={}",
+            header.number(),
+            extra_data.len(),
+            signature.len(),
+            hex::encode(signature)
+        );
+        
         // Parse signature: 64 bytes + 1 recovery byte
         let sig_bytes = &signature[..64];
         let recovery_id = signature[64];
@@ -197,42 +207,45 @@ where
         Ok(address)
     }
     
-    /// Calculate seal hash for BSC headers (using SealContent struct like double_sign precompile)
+    /// Calculate seal hash for BSC headers (matching bsc-erigon's EncodeSigHeader exactly)
     fn calculate_seal_hash(&self, header: &SealedHeader) -> alloy_primitives::B256 {
         use alloy_primitives::keccak256;
         
-        // Use the same approach as the double_sign precompile
+        // Use the exact same approach as bsc-erigon's EncodeSigHeader
         const EXTRA_SEAL: usize = 65;
         
         let chain_id = self.chain_spec.chain().id();
         let extra_data = &header.extra_data();
         
-        // Extract extra data without the seal
+        // Extract extra data without the seal (matching bsc-erigon line 1761)
         let extra_without_seal = if extra_data.len() >= EXTRA_SEAL {
             &extra_data[..extra_data.len() - EXTRA_SEAL]
         } else {
             extra_data
         };
         
-        // Create SealContent exactly like double_sign precompile
-        let seal_content = crate::evm::precompiles::double_sign::SealContent {
-            chain_id,
-            parent_hash: header.parent_hash().0,
-            uncle_hash: header.ommers_hash().0,
-            coinbase: header.beneficiary().0 .0,
-            root: header.state_root().0,
-            tx_hash: header.transactions_root().0,
-            receipt_hash: header.receipts_root().0,
-            bloom: header.logs_bloom().0 .0,
-            difficulty: header.difficulty().clone(),
-            number: header.number(),
-            gas_limit: header.gas_limit(),
-            gas_used: header.gas_used(),
-            time: header.timestamp(),
-            extra: alloy_primitives::Bytes::from(extra_without_seal.to_vec()),
-            mix_digest: header.mix_hash().unwrap_or_default().0,
-            nonce: header.nonce().unwrap_or_default().0,
-        };
+        // Encode directly as slice like bsc-erigon does (NOT using SealContent struct)
+        // This matches bsc-erigon's EncodeSigHeader function exactly
+        
+        // Create a vector of all the fields to encode (matching Go's []interface{})
+        let fields = vec![
+            alloy_rlp::encode(&chain_id),
+            alloy_rlp::encode(&header.parent_hash()),
+            alloy_rlp::encode(&header.ommers_hash()),
+            alloy_rlp::encode(&header.beneficiary()),
+            alloy_rlp::encode(&header.state_root()),
+            alloy_rlp::encode(&header.transactions_root()),
+            alloy_rlp::encode(&header.receipts_root()),
+            alloy_rlp::encode(&header.logs_bloom()),
+            alloy_rlp::encode(&header.difficulty()),
+            alloy_rlp::encode(&header.number()),
+            alloy_rlp::encode(&header.gas_limit()),
+            alloy_rlp::encode(&header.gas_used()),
+            alloy_rlp::encode(&header.timestamp()),
+            alloy_rlp::encode(&alloy_primitives::Bytes::from(extra_without_seal.to_vec())),
+            alloy_rlp::encode(&header.mix_hash().unwrap_or_default()),
+            alloy_rlp::encode(&header.nonce().unwrap_or_default()),
+        ];
         
         // Debug logging for seal hash calculation
         tracing::debug!(
@@ -243,8 +256,8 @@ where
             extra_without_seal.len()
         );
         
-        // Use automatic RLP encoding like double_sign precompile
-        let encoded = alloy_rlp::encode(seal_content);
+        // Encode the list of fields (matching bsc-erigon's []interface{} encoding)
+        let encoded = alloy_rlp::encode(&fields);
         let result = keccak256(&encoded);
         
         tracing::debug!(
