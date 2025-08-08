@@ -12,7 +12,6 @@ use reth_chainspec::EthChainSpec;
 use reth_primitives_traits::SealedHeader;
 use std::collections::HashMap;
 use std::sync::Arc;
-use alloy_primitives::hex;
 
 /// BSC consensus validator that implements the missing pre/post execution logic
 #[derive(Debug, Clone)]
@@ -155,25 +154,6 @@ where
         let seal_hash = self.calculate_seal_hash(header);
         let message = Message::from_digest(seal_hash.0);
         
-        // DEBUG: Add detailed logging for signature extraction
-        tracing::debug!(
-            "🔐 [BSC] Signature extraction for block {}: extra_data_len={}, signature_len={}, signature_hex={}",
-            header.number(),
-            extra_data.len(),
-            signature.len(),
-            hex::encode(signature)
-        );
-        
-        // DEBUG: Extra verification of slice bounds
-        let expected_signature_start = extra_data.len() - 65;
-        tracing::debug!(
-            "🔐 [BSC] Signature slice bounds for block {}: expected_start={}, actual_slice_len={}, extra_last_10_bytes={}",
-            header.number(),
-            expected_signature_start,
-            signature.len(),
-            hex::encode(&extra_data[extra_data.len().saturating_sub(10)..])
-        );
-        
         // Parse signature: 64 bytes + 1 recovery byte
         if signature.len() != 65 {
             return Err(ConsensusError::Other(format!("Invalid signature length: expected 65, got {}", signature.len()).into()));
@@ -181,17 +161,6 @@ where
         
         let sig_bytes = &signature[..64];
         let recovery_id = signature[64];
-        
-        // DEBUG: Verify the slicing worked correctly
-        tracing::debug!(
-            "🔐 [BSC] Signature parsing for block {}: sig_bytes_len={}, recovery_id={}, sig_bytes_hex={}",
-            header.number(),
-            sig_bytes.len(),
-            recovery_id,
-            hex::encode(sig_bytes)
-        );
-        
-        // (Removed duplicate debug line - using the new one above instead)
         
         // Handle recovery ID (bsc-erigon compatible)
         let recovery_id = RecoveryId::from_i32(recovery_id as i32)
@@ -209,14 +178,6 @@ where
         let public_key_bytes = public_key.serialize_uncompressed();
         let hash = keccak256(&public_key_bytes[1..]); // Skip 0x04 prefix
         let address = Address::from_slice(&hash[12..]);
-        
-        tracing::debug!(
-            "🔐 [BSC] Seal recovery result for block {}: recovered_address={}, expected_miner={}, match={}",
-            header.number(),
-            address,
-            header.beneficiary(),
-            address == header.beneficiary()
-        );
         
         Ok(address)
     }
@@ -310,35 +271,10 @@ where
             Encodable::encode(&header.blob_gas_used().unwrap_or_default(), &mut out);
             Encodable::encode(&header.excess_blob_gas().unwrap_or_default(), &mut out);
             Encodable::encode(&header.parent_beacon_block_root().unwrap(), &mut out);
-            
-            tracing::debug!(
-                "🔐 [BSC] Added post-4844 fields for block {}: base_fee={:?}, withdrawals_root={:?}, blob_gas_used={:?}, excess_blob_gas={:?}",
-                header.number(),
-                header.base_fee_per_gas(),
-                header.withdrawals_root(),
-                header.blob_gas_used(),
-                header.excess_blob_gas()
-            );
         }
-        
-        // Debug logging for seal hash calculation
-        tracing::debug!(
-            "🔐 [BSC] Seal hash calculation for block {}: chain_id={}, extra_len={}, extra_without_seal_len={}",
-            header.number(),
-            chain_id,
-            extra_data.len(),
-            extra_without_seal.len()
-        );
         
         let encoded = out.to_vec();
         let result = keccak256(&encoded);
-        
-        tracing::debug!(
-            "🔐 [BSC] Seal hash result for block {}: hash={:?}, encoded_len={}",
-            header.number(),
-            result,
-            encoded.len()
-        );
         
         result
     }
