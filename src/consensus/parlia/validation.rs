@@ -269,6 +269,17 @@ where
         rlp_head.payload_length += header.mix_hash().unwrap_or_default().length();
         rlp_head.payload_length += header.nonce().unwrap_or_default().length();
         
+        // Add conditional field lengths for post-4844 blocks (exactly like zoro_reth)
+        if header.parent_beacon_block_root().is_some() &&
+            header.parent_beacon_block_root().unwrap() == alloy_primitives::B256::ZERO
+        {
+            rlp_head.payload_length += U256::from(header.base_fee_per_gas().unwrap_or_default()).length();
+            rlp_head.payload_length += header.withdrawals_root().unwrap_or_default().length();
+            rlp_head.payload_length += header.blob_gas_used().unwrap_or_default().length();
+            rlp_head.payload_length += header.excess_blob_gas().unwrap_or_default().length();
+            rlp_head.payload_length += header.parent_beacon_block_root().unwrap().length();
+        }
+        
         // Encode the RLP list header first
         rlp_head.encode(&mut out);
         
@@ -289,6 +300,26 @@ where
         Encodable::encode(&extra_without_seal, &mut out);
         Encodable::encode(&header.mix_hash().unwrap_or_default(), &mut out);
         Encodable::encode(&header.nonce().unwrap_or_default(), &mut out);
+        
+        // Add conditional fields for post-4844 blocks (exactly like zoro_reth)
+        if header.parent_beacon_block_root().is_some() &&
+            header.parent_beacon_block_root().unwrap() == alloy_primitives::B256::ZERO
+        {
+            Encodable::encode(&U256::from(header.base_fee_per_gas().unwrap_or_default()), &mut out);
+            Encodable::encode(&header.withdrawals_root().unwrap_or_default(), &mut out);
+            Encodable::encode(&header.blob_gas_used().unwrap_or_default(), &mut out);
+            Encodable::encode(&header.excess_blob_gas().unwrap_or_default(), &mut out);
+            Encodable::encode(&header.parent_beacon_block_root().unwrap(), &mut out);
+            
+            tracing::debug!(
+                "🔐 [BSC] Added post-4844 fields for block {}: base_fee={:?}, withdrawals_root={:?}, blob_gas_used={:?}, excess_blob_gas={:?}",
+                header.number(),
+                header.base_fee_per_gas(),
+                header.withdrawals_root(),
+                header.blob_gas_used(),
+                header.excess_blob_gas()
+            );
+        }
         
         // Debug logging for seal hash calculation
         tracing::debug!(
