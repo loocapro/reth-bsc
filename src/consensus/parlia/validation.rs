@@ -241,45 +241,54 @@ where
         // Encode directly as slice like bsc-erigon does (NOT using SealContent struct)
         // This matches bsc-erigon's EncodeSigHeader function exactly
         
-        // Create a custom struct that exactly matches bsc-erigon's field ordering
-        #[derive(alloy_rlp::RlpEncodable)]
-        struct HeaderForSeal {
-            chain_id: u64,
-            parent_hash: alloy_primitives::B256,
-            ommers_hash: alloy_primitives::B256,
-            beneficiary: alloy_primitives::Address,
-            state_root: alloy_primitives::B256,
-            transactions_root: alloy_primitives::B256,
-            receipts_root: alloy_primitives::B256,
-            logs_bloom: alloy_primitives::Bloom,
-            difficulty: alloy_primitives::U256,
-            number: u64,
-            gas_limit: u64,
-            gas_used: u64,
-            timestamp: u64,
-            extra_data: alloy_primitives::Bytes,
-            mix_hash: alloy_primitives::B256,
-            nonce: u64,
-        }
+        // Copy zoro_reth's exact approach: manual field-by-field encoding
+        // This matches zoro_reth's encode_header_with_chain_id function exactly
+        use alloy_rlp::Encodable;
+        use alloy_primitives::{bytes::BytesMut, U256};
         
-        let header_for_seal = HeaderForSeal {
-            chain_id,
-            parent_hash: header.parent_hash(),
-            ommers_hash: header.ommers_hash(),
-            beneficiary: header.beneficiary(),
-            state_root: header.state_root(),
-            transactions_root: header.transactions_root(),
-            receipts_root: header.receipts_root(),
-            logs_bloom: header.logs_bloom(),
-            difficulty: header.difficulty(),
-            number: header.number(),
-            gas_limit: header.gas_limit(),
-            gas_used: header.gas_used(),
-            timestamp: header.timestamp(),
-            extra_data: alloy_primitives::Bytes::from(extra_without_seal.to_vec()),
-            mix_hash: header.mix_hash().unwrap_or_default(),
-            nonce: header.nonce().unwrap_or_default().into(),
-        };
+        let mut out = BytesMut::new();
+        
+        // First encode the RLP list header (like zoro_reth's rlp_header function)
+        let mut rlp_head = alloy_rlp::Header { list: true, payload_length: 0 };
+        
+        // Calculate payload length for all fields
+        rlp_head.payload_length += U256::from(chain_id).length();
+        rlp_head.payload_length += header.parent_hash().length();
+        rlp_head.payload_length += header.ommers_hash().length();
+        rlp_head.payload_length += header.beneficiary().length();
+        rlp_head.payload_length += header.state_root().length();
+        rlp_head.payload_length += header.transactions_root().length();
+        rlp_head.payload_length += header.receipts_root().length();
+        rlp_head.payload_length += header.logs_bloom().length();
+        rlp_head.payload_length += header.difficulty().length();
+        rlp_head.payload_length += U256::from(header.number()).length();
+        rlp_head.payload_length += header.gas_limit().length();
+        rlp_head.payload_length += header.gas_used().length();
+        rlp_head.payload_length += header.timestamp().length();
+        rlp_head.payload_length += extra_without_seal.length();
+        rlp_head.payload_length += header.mix_hash().unwrap_or_default().length();
+        rlp_head.payload_length += header.nonce().unwrap_or_default().length();
+        
+        // Encode the RLP list header first
+        rlp_head.encode(&mut out);
+        
+        // Then encode each field individually (exactly like zoro_reth)
+        Encodable::encode(&U256::from(chain_id), &mut out);
+        Encodable::encode(&header.parent_hash(), &mut out);
+        Encodable::encode(&header.ommers_hash(), &mut out);
+        Encodable::encode(&header.beneficiary(), &mut out);
+        Encodable::encode(&header.state_root(), &mut out);
+        Encodable::encode(&header.transactions_root(), &mut out);
+        Encodable::encode(&header.receipts_root(), &mut out);
+        Encodable::encode(&header.logs_bloom(), &mut out);
+        Encodable::encode(&header.difficulty(), &mut out);
+        Encodable::encode(&U256::from(header.number()), &mut out);
+        Encodable::encode(&header.gas_limit(), &mut out);
+        Encodable::encode(&header.gas_used(), &mut out);
+        Encodable::encode(&header.timestamp(), &mut out);
+        Encodable::encode(&extra_without_seal, &mut out);
+        Encodable::encode(&header.mix_hash().unwrap_or_default(), &mut out);
+        Encodable::encode(&header.nonce().unwrap_or_default(), &mut out);
         
         // Debug logging for seal hash calculation
         tracing::debug!(
@@ -290,7 +299,7 @@ where
             extra_without_seal.len()
         );
         
-        let encoded = alloy_rlp::encode(&header_for_seal);
+        let encoded = out.to_vec();
         let result = keccak256(&encoded);
         
         tracing::debug!(
