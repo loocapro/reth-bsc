@@ -1,17 +1,3 @@
-# feat_parlia_20250805 Status 
-1. can run with testnet to 300000 blocks in debug.tips
-2. can have snapshot API:
-```
-curl --location 'http://127.0.0.1:8545' \
---header 'Content-Type: application/json' \
---data '{
-    "jsonrpc": "2.0",
-    "method": "parlia_getSnapshot",
-    "params": ["0x493e0"],
-    "id": 3
-  }'
-```
-
 # Reth @ BSC
 
 A BSC-compatible Reth client implementation. This project is **not** a fork of Reth, but rather an extension that leverages Reth's powerful `NodeBuilder` API to provide BSC compatibility.

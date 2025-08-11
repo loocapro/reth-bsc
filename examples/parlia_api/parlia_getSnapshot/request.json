@@ -1,6 +1,0 @@
-{
-    "jsonrpc": "2.0",
-    "method": "parlia_getSnapshot",
-    "params": ["0x7530"],
-    "id": 3
-  }
