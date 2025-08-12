@@ -25,11 +25,9 @@ pub const LORENTZ_TURN_LENGTH: u8 = 8;
 pub const MAXWELL_EPOCH_LENGTH: u64 = 1000;
 pub const MAXWELL_TURN_LENGTH: u8 = 16;
 
-// Approximate block intervals converted to seconds (BSC headers store
-// timestamps in seconds precision).
-pub const DEFAULT_BLOCK_INTERVAL_SECS: u64 = 3;   // 3000 ms
-pub const LORENTZ_BLOCK_INTERVAL_SECS: u64 = 2;   // 1500 ms (ceil)
-pub const MAXWELL_BLOCK_INTERVAL_SECS: u64 = 1;   //  750 ms (ceil)
+pub const DEFAULT_BLOCK_INTERVAL: u64 = 3000;   // 3000 ms
+pub const LORENTZ_BLOCK_INTERVAL: u64 = 1500;   // 1500 ms
+pub const MAXWELL_BLOCK_INTERVAL: u64 = 750;   //  750 ms
 
 /// `ValidatorInfo` holds metadata for a validator at a given epoch.
 #[derive(Debug, Default, PartialEq, Eq, Clone, Serialize, Deserialize)]
@@ -110,7 +108,7 @@ impl Snapshot {
             recent_proposers: Default::default(),
             vote_data: Default::default(),
             turn_length: Some(DEFAULT_TURN_LENGTH),
-            block_interval: DEFAULT_BLOCK_INTERVAL_SECS,
+            block_interval: DEFAULT_BLOCK_INTERVAL,
         }
     }
 
@@ -150,43 +148,57 @@ impl Snapshot {
         if !snap.validators.contains(&validator) {
             return None;
         }
-        if snap.sign_recently(validator) {
-            return None;
+
+        let header_timestamp = next_header.timestamp();
+        let is_bohr = chain_spec.is_bohr_active_at_timestamp(header_timestamp);
+        if is_bohr {
+            if snap.sign_recently(validator) {
+                tracing::warn!("🔍 snap-debug [BSC] after bohr, validator over-proposed, validator: {:?}, block_number: {:?}", validator, block_number);
+                return None;
+            }
+        } else {
+            for (_, &v) in &snap.recent_proposers {
+                if v == validator {
+                    tracing::warn!("🔍 snap-debug [BSC] before bohr, validator over-proposed, validator: {:?}, block_number: {:?}", validator, block_number);
+                    return None;
+                }
+            }
         }
         snap.recent_proposers.insert(block_number, validator);
 
-        // -------------------------------------------------------------------
-        //  Epoch / turn-length upgrades at Lorentz & Maxwell (following bsc-erigon approach)
-        // -------------------------------------------------------------------
-
-        // Determine hardfork activation using chain spec (like bsc-erigon)
-        let header_timestamp = next_header.timestamp();
-        let is_bohr = chain_spec.is_bohr_active_at_timestamp(header_timestamp);
-        let is_lorentz_active = chain_spec.is_lorentz_active_at_timestamp(header_timestamp);
         let is_maxwell_active = chain_spec.is_maxwell_active_at_timestamp(header_timestamp);
-
-        // Update block interval based on hardforks (like bsc-erigon)
         if is_maxwell_active {
-            snap.block_interval = MAXWELL_BLOCK_INTERVAL_SECS;
-        } else if is_lorentz_active {
-            snap.block_interval = LORENTZ_BLOCK_INTERVAL_SECS;
+            let latest_finalized_block_number = snap.get_finalized_number();
+			// BEP-524: Clear entries up to the latest finalized block
+			let blocks_to_remove: Vec<u64> = snap.recent_proposers.keys()
+				.filter(|&&block_number| block_number <= latest_finalized_block_number)
+				.copied()
+				.collect();
+			for block_number in blocks_to_remove {
+				snap.recent_proposers.remove(&block_number);
+			}
         }
 
-        // Update epoch_num and turn_length based on active hardforks
+        let is_lorentz_active = chain_spec.is_lorentz_active_at_timestamp(header_timestamp);
+        if is_maxwell_active {
+            snap.block_interval = MAXWELL_BLOCK_INTERVAL;
+        } else if is_lorentz_active {
+            snap.block_interval = LORENTZ_BLOCK_INTERVAL;
+        }
+
+        let epoch_length = snap.epoch_num;
         let next_block_number = block_number + 1;
         if snap.epoch_num == DEFAULT_EPOCH_LENGTH && is_lorentz_active && next_block_number % LORENTZ_EPOCH_LENGTH == 0 {
-            // Like bsc-erigon: prevent incorrect block usage for validator parsing after Lorentz
             snap.epoch_num = LORENTZ_EPOCH_LENGTH;
-            snap.turn_length = Some(LORENTZ_TURN_LENGTH);
         }
         if snap.epoch_num == LORENTZ_EPOCH_LENGTH && is_maxwell_active && next_block_number % MAXWELL_EPOCH_LENGTH == 0 {
             snap.epoch_num = MAXWELL_EPOCH_LENGTH;
-            snap.turn_length = Some(MAXWELL_TURN_LENGTH);
         }
 
-        // Epoch change driven by new validator set / checkpoint header.
-        let epoch_key = u64::MAX - block_number / snap.epoch_num;
+        // change validator set
+        let epoch_key = u64::MAX - block_number / epoch_length;
         if !new_validators.is_empty() && (!is_bohr || !snap.recent_proposers.contains_key(&epoch_key)) {
+            // Epoch change driven by new validator set / checkpoint header.
             new_validators.sort();
             if let Some(tl) = turn_length { snap.turn_length = Some(tl) }
 
@@ -292,6 +304,14 @@ impl Snapshot {
             if u64::from(times) >= allowed { return true; }
         }
         false
+    }
+
+    pub fn get_finalized_number(&self) -> BlockNumber {
+        if self.vote_data.source_number > 0 {
+            self.vote_data.source_number
+        } else {
+            0
+        }
     }
 }
 
@@ -429,8 +449,8 @@ mod tests {
         };
         
         // Create a mock chain spec for testing
-        use crate::chainspec::BscChainSpec;
-        let chain_spec = BscChainSpec::bsc_testnet();
+        use crate::chainspec::{bsc_testnet, BscChainSpec};
+        let chain_spec = BscChainSpec::from(bsc_testnet());
         
         // This should not panic due to division by zero
         let result = snapshot.apply(

@@ -212,7 +212,8 @@ mod tests {
     use super::*;
     use alloy_primitives::{address, U256};
     use alloy_consensus::TxLegacy;
-    use reth_primitives::{Transaction, Signature};
+    use reth_primitives::Transaction;
+    use alloy_primitives::Signature;
     use crate::system_contracts::SLASH_CONTRACT;
 
     /// Helper to create a test transaction

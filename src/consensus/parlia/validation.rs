@@ -229,7 +229,7 @@ where
         rlp_head.payload_length += extra_without_seal.length();
         rlp_head.payload_length += header.mix_hash().unwrap_or_default().length();
         rlp_head.payload_length += header.nonce().unwrap_or_default().length();
-        
+       
         // Add conditional field lengths for post-4844 blocks (exactly like reth-bsc-trail)
         if header.parent_beacon_block_root().is_some() &&
             header.parent_beacon_block_root().unwrap() == alloy_primitives::B256::ZERO
@@ -239,6 +239,9 @@ where
             rlp_head.payload_length += header.blob_gas_used().unwrap_or_default().length();
             rlp_head.payload_length += header.excess_blob_gas().unwrap_or_default().length();
             rlp_head.payload_length += header.parent_beacon_block_root().unwrap().length();
+            if header.requests_hash().is_some() {
+                rlp_head.payload_length += header.requests_hash().unwrap().length();
+            }
         }
         
         // Encode the RLP list header first
@@ -271,6 +274,9 @@ where
             Encodable::encode(&header.blob_gas_used().unwrap_or_default(), &mut out);
             Encodable::encode(&header.excess_blob_gas().unwrap_or_default(), &mut out);
             Encodable::encode(&header.parent_beacon_block_root().unwrap(), &mut out);
+            if header.requests_hash().is_some() {
+                Encodable::encode(&header.requests_hash().unwrap(), &mut out);
+            }
         }
         
         let encoded = out.to_vec();

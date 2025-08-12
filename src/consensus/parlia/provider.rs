@@ -370,13 +370,21 @@ where
                 (Vec::new(), None, None)
             };
 
+            // Parse attestation from header for vote tracking
+            let attestation = super::attestation::parse_vote_attestation_from_header(
+                header,
+                working_snapshot.epoch_num,
+                self.chain_spec.is_luban_active_at_block(header.number),
+                self.chain_spec.is_bohr_active_at_timestamp(header.timestamp)
+            );
+
             // Apply header to snapshot (now determines hardfork activation internally)
             working_snapshot = match working_snapshot.apply(
                 header.beneficiary,
                 header,
                 new_validators,
                 vote_addrs,
-                None, // TODO: Parse attestation from header like reth-bsc-trail for vote tracking
+                attestation,
                 turn_length,
                 &*self.chain_spec,
             ) {

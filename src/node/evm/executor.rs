@@ -789,13 +789,28 @@ where
                     (Vec::new(), None, None)
                 };
 
+                // Get current header and parse attestation
+                let current_header = provider.get_checkpoint_header(current_block_number);
+                let (apply_header, attestation) = if let Some(current_header) = current_header {
+                    let attestation = crate::consensus::parlia::attestation::parse_vote_attestation_from_header(
+                        &current_header,
+                        parent_snapshot.epoch_num,
+                        self.spec.is_luban_active_at_block(current_block_number),
+                        self.spec.is_bohr_active_at_timestamp(current_header.timestamp)
+                    );
+                    (current_header, attestation)
+                } else {
+                    // Fallback to the constructed header if we can't get the real one
+                    (header, None)
+                };
+
                 // Apply current block to parent snapshot (like reth-bsc-trail does)
                 if let Some(current_snapshot) = parent_snapshot.apply(
                     current_block.beneficiary, // proposer
-                    &header,
+                    &apply_header,
                     new_validators, // parsed validators from checkpoint header
                     vote_addrs, // parsed vote addresses from checkpoint header
-                    None, // TODO: parse attestation like reth-bsc-trail
+                    attestation, // parsed attestation from header
                     turn_length, // parsed turn length from checkpoint header
                     &self.spec,
                 ) {
