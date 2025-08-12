@@ -16,50 +16,48 @@ path = "src/main.rs"
 name = "snapshot-checker"
 path = "src/bin/snapshot_checker.rs"
 
-
-
 [dependencies]
-reth = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b" }
-reth-cli = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b" }
-reth-cli-commands = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b" }
-reth-basic-payload-builder = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b" }
-reth-db = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b" }
-reth-engine-local = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b" }
-reth-chainspec = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b" }
-reth-cli-util = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b" }
-reth-discv4 = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b", features = ["test-utils"] }
-reth-engine-primitives = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b" }
-reth-ethereum-forks = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b", features = ["serde"] }
-reth-ethereum-payload-builder = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b" }
-reth-ethereum-primitives = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b" }
-reth-eth-wire = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b" }
-reth-eth-wire-types = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b" }
-reth-evm = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b" }
-reth-evm-ethereum = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b" }
+reth = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b-simplified" }
+reth-cli = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b-simplified" }
+reth-cli-commands = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b-simplified" }
+reth-basic-payload-builder = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b-simplified" }
+reth-db = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b-simplified" }
+reth-engine-local = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b-simplified" }
+reth-chainspec = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b-simplified" }
+reth-cli-util = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b-simplified" }
+reth-discv4 = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b-simplified", features = ["test-utils"] }
+reth-engine-primitives = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b-simplified" }
+reth-ethereum-forks = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b-simplified", features = ["serde"] }
+reth-ethereum-payload-builder = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b-simplified" }
+reth-ethereum-primitives = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b-simplified" }
+reth-eth-wire = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b-simplified" }
+reth-eth-wire-types = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b-simplified" }
+reth-evm = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b-simplified" }
+reth-evm-ethereum = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b-simplified" }
 # reth-execution-types = { git = "https://github.com/clydemeng/reth.git", branch = "extend-8e0ff926b" }
-reth-transaction-pool = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b" }
-reth-node-core = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b" }
-reth-node-api = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b" }
-reth-node-builder = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b" }
-reth-payload-builder = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b" }
-reth-revm = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b" }
-reth-network = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b", features = ["test-utils"] }
-reth-network-p2p = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b" }
-reth-network-api = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b" }
-reth-node-ethereum = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b", features = ["test-utils"] }
-reth-network-peers = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b" }
-reth-payload-primitives = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b" }
-reth-primitives = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b" }
-reth-primitives-traits = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b" }
-reth-provider = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b", features = ["test-utils"] }
-reth-rpc-eth-api = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b" }
-reth-rpc-engine-api = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b" }
-reth-rpc-api = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b" }
-reth-tracing = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b" }
-reth-trie-common = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b" }
-reth-trie-db = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b" }
-reth-rpc = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b" }
-reth-optimism-rpc = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b" }
+reth-transaction-pool = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b-simplified" }
+reth-node-core = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b-simplified" }
+reth-node-api = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b-simplified" }
+reth-node-builder = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b-simplified" }
+reth-payload-builder = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b-simplified" }
+reth-revm = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b-simplified" }
+reth-network = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b-simplified", features = ["test-utils"] }
+reth-network-p2p = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b-simplified" }
+reth-network-api = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b-simplified" }
+reth-node-ethereum = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b-simplified", features = ["test-utils"] }
+reth-network-peers = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b-simplified" }
+reth-payload-primitives = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b-simplified" }
+reth-primitives = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b-simplified" }
+reth-primitives-traits = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b-simplified" }
+reth-provider = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b-simplified", features = ["test-utils"] }
+reth-rpc-eth-api = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b-simplified" }
+reth-rpc-engine-api = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b-simplified" }
+reth-rpc-api = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b-simplified" }
+reth-tracing = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b-simplified" }
+reth-trie-common = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b-simplified" }
+reth-trie-db = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b-simplified" }
+reth-rpc = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b-simplified" }
+reth-optimism-rpc = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b-simplified" }
 
 revm = "27.0.3"
 
@@ -179,7 +177,7 @@ client = [
 
 [dev-dependencies]
 # E2E test-suite support
-reth-e2e-test-utils = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b" }
+reth-e2e-test-utils = { git = "https://github.com/clydemeng/reth.git", branch = "parlia-6487f0b-simplified" }
 # (all other reth crates are pulled in automatically via workspace deps)
 
 
