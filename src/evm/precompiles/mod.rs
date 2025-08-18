@@ -12,7 +12,7 @@ use std::boxed::Box;
 
 mod bls;
 mod cometbft;
-mod double_sign;
+pub mod double_sign;
 mod error;
 mod iavl;
 mod tendermint;

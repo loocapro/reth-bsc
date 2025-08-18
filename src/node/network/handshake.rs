@@ -51,6 +51,12 @@ impl BscHandshake {
                     return Ok(negotiated_status);
                 }
                 Err(_) => {
+                    // Some legacy BSC nodes respond with an empty 0x0b upgrade-status (0x0bc2c180).
+                    // Accept this specific payload leniency but still disconnect on all other errors.
+                    if their_msg.as_ref() == [0x0b, 0xc2, 0xc1, 0x80] {
+                        debug!("Tolerating legacy empty upgrade-status 0x0bc2c180 message");
+                        return Ok(negotiated_status);
+                    }
                     unauth.disconnect(DisconnectReason::ProtocolBreach).await?;
                     return Err(EthStreamError::EthHandshakeError(
                         EthHandshakeError::NonStatusMessageInHandshake,

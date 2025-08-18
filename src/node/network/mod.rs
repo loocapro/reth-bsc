@@ -1,9 +1,8 @@
 #![allow(clippy::owned_cow)]
 use crate::{
-    consensus::ParliaConsensus,
     node::{
         engine_api::payload::BscPayloadTypes,
-        network::block_import::{handle::ImportHandle, service::ImportService, BscBlockImport},
+        network::block_import::{handle::ImportHandle, BscBlockImport},
         primitives::{BscBlobTransactionSidecar, BscPrimitives},
         BscNode,
     },
@@ -18,9 +17,10 @@ use reth::{
 };
 use reth_chainspec::EthChainSpec;
 use reth_discv4::Discv4Config;
-use reth_engine_primitives::BeaconConsensusEngineHandle;
+
 use reth_eth_wire::{BasicNetworkPrimitives, NewBlock, NewBlockPayload};
 use reth_ethereum_primitives::PooledTransactionVariant;
+use reth_engine_primitives::BeaconConsensusEngineHandle;
 use reth_network::{NetworkConfig, NetworkHandle, NetworkManager};
 use reth_network_api::PeersInfo;
 use std::{sync::Arc, time::Duration};
@@ -141,9 +141,27 @@ pub type BscNetworkPrimitives =
 /// A basic bsc network builder.
 #[derive(Debug)]
 pub struct BscNetworkBuilder {
-    pub(crate) engine_handle_rx:
-        Arc<Mutex<Option<oneshot::Receiver<BeaconConsensusEngineHandle<BscPayloadTypes>>>>>,
+    engine_handle_rx: Arc<
+        Mutex<Option<oneshot::Receiver<BeaconConsensusEngineHandle<BscPayloadTypes>>>>,
+    >,
 }
+
+impl BscNetworkBuilder {
+    pub fn new(
+        engine_handle_rx: Arc<Mutex<Option<oneshot::Receiver<BeaconConsensusEngineHandle<BscPayloadTypes>>>>>,
+    ) -> Self {
+        Self { engine_handle_rx }
+    }
+}
+
+impl Default for BscNetworkBuilder {
+    fn default() -> Self {
+        let (_tx, rx) = oneshot::channel();
+        Self::new(Arc::new(Mutex::new(Some(rx))))
+    }
+}
+
+
 
 impl BscNetworkBuilder {
     /// Returns the [`NetworkConfig`] that contains the settings to launch the p2p network.
@@ -170,8 +188,15 @@ impl BscNetworkBuilder {
         let (to_network, import_outcome) = mpsc::unbounded_channel();
 
         let handle = ImportHandle::new(to_import, import_outcome);
+        
+        // Import the necessary types for consensus
+        use crate::consensus::ParliaConsensus;
+        use crate::node::network::block_import::service::ImportService;
+        
+        // Create consensus instance for ImportService
         let consensus = Arc::new(ParliaConsensus { provider: ctx.provider().clone() });
-
+        
+        // Spawn the critical ImportService task exactly like the official implementation
         ctx.task_executor().spawn_critical("block import", async move {
             let handle = engine_handle_rx
                 .lock()
@@ -192,7 +217,9 @@ impl BscNetworkBuilder {
             .discovery(discv4)
             .eth_rlpx_handshake(Arc::new(BscHandshake::default()));
 
-        let network_config = ctx.build_network_config(network_builder);
+        let mut network_config = ctx.build_network_config(network_builder);
+        // Ensure our advertised fork ID matches the fork filter we validate against.
+        network_config.status.forkid = network_config.fork_filter.current();
 
         Ok(network_config)
     }

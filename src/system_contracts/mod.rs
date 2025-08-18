@@ -2,12 +2,13 @@
 //! Credits to <https://github.com/bnb-chain/reth/blob/main/crates/bsc/primitives/src/system_contracts/mod.rs>
 use crate::{
     chainspec::{bsc::bsc_mainnet, bsc_chapel::bsc_testnet},
+    consensus::parlia::VoteAddress,
     hardforks::{bsc::BscHardfork, BscHardforks},
 };
-use abi::{STAKE_HUB_ABI, VALIDATOR_SET_ABI};
+use abi::{STAKE_HUB_ABI, VALIDATOR_SET_ABI, VALIDATOR_SET_ABI_BEFORE_LUBAN};
 use alloy_chains::Chain;
 use alloy_consensus::TxLegacy;
-use alloy_dyn_abi::{DynSolValue, JsonAbiExt};
+use alloy_dyn_abi::{DynSolValue, FunctionExt, JsonAbiExt};
 use alloy_json_abi::JsonAbi;
 use alloy_primitives::{address, hex, Address, BlockNumber, Bytes, Signature, TxKind, U256};
 use lazy_static::lazy_static;
@@ -20,21 +21,158 @@ use thiserror::Error;
 
 mod abi;
 mod embedded_contracts;
+pub mod feynman_fork;
 
 pub(crate) struct SystemContract<Spec: EthChainSpec> {
-    /// The validator contract abi
+    /// The validator set abi before luban.
+    validator_abi_before_luban: JsonAbi,
+    /// The validator contract abi.
     validator_abi: JsonAbi,
-    /// The stake hub abi
+    /// The stake hub abi.
     stake_hub_abi: JsonAbi,
-    /// The chain spec
+    /// The chain spec.
     chain_spec: Spec,
 }
 
-impl<Spec: EthChainSpec> SystemContract<Spec> {
+impl<Spec: EthChainSpec + crate::hardforks::BscHardforks> SystemContract<Spec> {
     pub(crate) fn new(chain_spec: Spec) -> Self {
+        let validator_abi_before_luban = serde_json::from_str(*VALIDATOR_SET_ABI_BEFORE_LUBAN).unwrap();
         let validator_abi = serde_json::from_str(*VALIDATOR_SET_ABI).unwrap();
         let stake_hub_abi = serde_json::from_str(*STAKE_HUB_ABI).unwrap();
-        Self { validator_abi, stake_hub_abi, chain_spec }
+        Self { validator_abi_before_luban, validator_abi, stake_hub_abi, chain_spec }
+    }
+
+    /// Return system address and input which is used to query current validators before luban.
+    pub fn get_current_validators_before_luban(&self, block_number: BlockNumber) -> (Address, Bytes) {
+        let function = if self.chain_spec.is_euler_active_at_block(block_number) {
+            self.validator_abi_before_luban
+                .function("getMiningValidators")
+                .unwrap()
+                .first()
+                .unwrap()
+        } else {
+            self.validator_abi_before_luban.function("getValidators").unwrap().first().unwrap()
+        };
+        (VALIDATOR_CONTRACT, Bytes::from(function.abi_encode_input(&[]).unwrap()))
+    }
+
+    /// Unpack the data into validator set before luban.
+    pub fn unpack_data_into_validator_set_before_luban(&self, data: &[u8]) -> Vec<Address> {
+        let function =
+            self.validator_abi_before_luban.function("getValidators").unwrap().first().unwrap();
+        let output = function.abi_decode_output(data).unwrap();
+
+        output
+            .first()
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|val| val.as_address().unwrap())
+            .collect()
+    }
+
+    /// Return system address and input which is used to query current validators.
+    pub fn get_current_validators(&self) -> (Address, Bytes) {
+        let function = self.validator_abi.function("getMiningValidators").unwrap().first().unwrap();
+        (VALIDATOR_CONTRACT, Bytes::from(function.abi_encode_input(&[]).unwrap()))
+    }
+
+    /// Unpack the data into validator set.
+    pub fn unpack_data_into_validator_set(&self, data: &[u8]) -> (Vec<Address>, Vec<VoteAddress>) {
+        let function = self.validator_abi.function("getMiningValidators").unwrap().first().unwrap();
+        let output = function.abi_decode_output(data).unwrap();
+
+        let consensus_addresses =
+            output[0].as_array().unwrap().iter().map(|val| val.as_address().unwrap()).collect();
+        let vote_address = output[1]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|val| {
+                if val.as_bytes().unwrap().is_empty() {
+                    VoteAddress::default()
+                } else {
+                    VoteAddress::from_slice(val.as_bytes().unwrap())
+                }
+            })
+            .collect();
+
+        (consensus_addresses, vote_address)
+    }
+
+    /// Return system address and input which is used to query max elected validators.
+    pub fn get_max_elected_validators(&self) -> (Address, Bytes) {
+        let function =
+            self.stake_hub_abi.function("maxElectedValidators").unwrap().first().unwrap();
+
+        (STAKE_HUB_CONTRACT, Bytes::from(function.abi_encode_input(&[]).unwrap()))
+    }
+
+    /// Unpack the data into max elected validators.
+    pub fn unpack_data_into_max_elected_validators(&self, data: &[u8]) -> U256 {
+        let function =
+            self.stake_hub_abi.function("maxElectedValidators").unwrap().first().unwrap();
+        let output = function.abi_decode_output(data).unwrap();
+
+        output[0].as_uint().unwrap().0
+    }
+
+    /// Return system address and input which is used to query validator election info.
+    pub fn get_validator_election_info(&self) -> (Address, Bytes) {
+        let function =
+            self.stake_hub_abi.function("getValidatorElectionInfo").unwrap().first().unwrap();
+
+        (
+            STAKE_HUB_CONTRACT,
+            Bytes::from(
+                function
+                    .abi_encode_input(&[
+                        DynSolValue::from(U256::from(0)),
+                        DynSolValue::from(U256::from(0)),
+                    ])
+                    .unwrap(),
+            ),
+        )
+    }
+
+    /// Unpack the data into validator election info.
+    pub fn unpack_data_into_validator_election_info(
+        &self,
+        data: &[u8],
+    ) -> (Vec<Address>, Vec<U256>, Vec<Vec<u8>>, U256) {
+        let function =
+            self.stake_hub_abi.function("getValidatorElectionInfo").unwrap().first().unwrap();
+        let output = function.abi_decode_output(data).unwrap();
+
+        let consensus_address =
+            output[0].as_array().unwrap().iter().map(|val| val.as_address().unwrap()).collect();
+        let voting_powers =
+            output[1].as_array().unwrap().iter().map(|val| val.as_uint().unwrap().0).collect();
+        let vote_addresses = output[2]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|val| val.as_bytes().unwrap().to_vec())
+            .collect();
+        let total_length = output[3].as_uint().unwrap().0;
+
+        (consensus_address, voting_powers, vote_addresses, total_length)
+    }
+
+    /// Return system address and input which is used to query turn length.
+    pub fn get_turn_length(&self) -> (Address, Bytes) {
+        let function = self.validator_abi.function("getTurnLength").unwrap().first().unwrap();
+
+        (VALIDATOR_CONTRACT, Bytes::from(function.abi_encode_input(&[]).unwrap()))
+    }
+
+    /// Unpack the data into turn length.
+    pub fn unpack_data_into_turn_length(&self, data: &[u8]) -> U256 {
+        let function = self.validator_abi.function("getTurnLength").unwrap().first().unwrap();
+        let output = function.abi_decode_output(data).unwrap();
+
+        output[0].as_uint().unwrap().0
     }
 
     /// Creates a deposit tx to pay block reward to a validator.

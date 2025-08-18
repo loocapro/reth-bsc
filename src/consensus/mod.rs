@@ -50,6 +50,8 @@ where
     }
 }
 
+pub mod parlia;
+
 #[cfg(test)]
 mod tests {
     use super::*;

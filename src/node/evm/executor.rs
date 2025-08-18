@@ -2,15 +2,16 @@ use super::patch::{
     patch_chapel_after_tx, patch_chapel_before_tx, patch_mainnet_after_tx, patch_mainnet_before_tx,
 };
 use crate::{
-    consensus::{MAX_SYSTEM_REWARD, SYSTEM_ADDRESS, SYSTEM_REWARD_PERCENT},
+    consensus::{MAX_SYSTEM_REWARD, SYSTEM_ADDRESS, SYSTEM_REWARD_PERCENT, parlia::{HertzPatchManager, VoteAddress, Snapshot}},
     evm::transaction::BscTxEnv,
     hardforks::BscHardforks,
     system_contracts::{
+        feynman_fork::ValidatorElectionInfo,
         get_upgrade_system_contracts, is_system_transaction, SystemContract, STAKE_HUB_CONTRACT,
         SYSTEM_REWARD_CONTRACT,
     },
 };
-use alloy_consensus::{Transaction, TxReceipt};
+use alloy_consensus::{Header, Transaction, TxReceipt};
 use alloy_eips::{eip7685::Requests, Encodable2718};
 use alloy_evm::{block::{ExecutableTx, StateChangeSource}, eth::receipt_builder::ReceiptBuilderCtx};
 use alloy_primitives::{uint, Address, TxKind, U256, BlockNumber, Bytes};
@@ -36,18 +37,31 @@ use revm::{
     state::Bytecode,
     Database as _, DatabaseCommit,
 };
-use tracing::debug;
+use tracing::{debug, trace, warn};
 use alloy_eips::eip2935::{HISTORY_STORAGE_ADDRESS, HISTORY_STORAGE_CODE};
 use alloy_primitives::keccak256;
+use std::{collections::HashMap, sync::Arc};
+use crate::consensus::parlia::SnapshotProvider;
+
+/// Helper type for the input of post execution.
+#[allow(clippy::type_complexity)]
+#[derive(Debug, Clone)]
+pub(crate) struct InnerExecutionContext {
+    pub(crate) current_validators: Option<(Vec<Address>, HashMap<Address, VoteAddress>)>,
+    pub(crate) max_elected_validators: Option<U256>,
+    pub(crate) validators_election_info: Option<Vec<ValidatorElectionInfo>>,
+    pub(crate) snap: Option<Snapshot>,
+    pub(crate) header: Option<Header>,
+}
 
 pub struct BscBlockExecutor<'a, EVM, Spec, R: ReceiptBuilder>
 where
     Spec: EthChainSpec,
 {
     /// Reference to the specification object.
-    spec: Spec,
+    pub(super) spec: Spec,
     /// Inner EVM.
-    evm: EVM,
+    pub(super) evm: EVM,
     /// Gas used in the block.
     gas_used: u64,
     /// Receipts of executed transactions.
@@ -57,13 +71,23 @@ where
     /// Receipt builder.
     receipt_builder: R,
     /// System contracts used to trigger fork specific logic.
-    system_contracts: SystemContract<Spec>,
+    pub(super) system_contracts: SystemContract<Spec>,
+    /// Hertz patch manager for mainnet compatibility
+    /// TODO: refine later.
+    #[allow(dead_code)]
+    hertz_patch_manager: HertzPatchManager,
     /// Context for block execution.
     _ctx: EthBlockExecutionCtx<'a>,
     /// Utility to call system caller.
     system_caller: SystemCaller<Spec>,
-    /// state hook
+    /// State hook.
     hook: Option<Box<dyn OnStateHook>>,
+    /// Snapshot provider for accessing Parlia validator snapshots.
+    pub(super) snapshot_provider: Option<Arc<dyn SnapshotProvider + Send + Sync>>,
+    /// Parlia consensus instance used (optional during execution).
+    pub(super) parlia_consensus: Option<Arc<dyn crate::consensus::parlia::ParliaConsensusObject + Send + Sync>>,
+    /// Inner execution context.
+    pub(super) inner_ctx: InnerExecutionContext,
 }
 
 impl<'a, DB, EVM, Spec, R: ReceiptBuilder> BscBlockExecutor<'a, EVM, Spec, R>
@@ -90,6 +114,10 @@ where
         receipt_builder: R,
         system_contracts: SystemContract<Spec>,
     ) -> Self {
+        // Determine if this is mainnet for Hertz patches
+        let is_mainnet = spec.chain().id() == 56; // BSC mainnet chain ID
+        let hertz_patch_manager = HertzPatchManager::new(is_mainnet);
+
         let spec_clone = spec.clone();
         Self {
             spec,
@@ -99,11 +127,23 @@ where
             system_txs: vec![],
             receipt_builder,
             system_contracts,
+            hertz_patch_manager,
             _ctx,
             system_caller: SystemCaller::new(spec_clone),
             hook: None,
+            snapshot_provider: crate::shared::get_snapshot_provider().cloned(),
+            parlia_consensus: crate::shared::get_parlia_consensus().cloned(),
+            inner_ctx: InnerExecutionContext {
+                current_validators: None,
+                max_elected_validators: None,
+                validators_election_info: None,
+                snap: None,
+                header: None,
+            },
         }
     }
+
+
 
     /// Applies system contract upgrades if the Feynman fork is not yet active.
     fn upgrade_contracts(&mut self) -> Result<(), BlockExecutionError> {
@@ -153,11 +193,16 @@ where
         &mut self,
         beneficiary: Address,
     ) -> Result<(), BlockExecutionError> {
+        debug!("🏗️  [BSC] deploy_genesis_contracts: beneficiary={:?}, block={}", beneficiary, self.evm.block().number);
         let txs = self.system_contracts.genesis_contracts_txs();
+        trace!("🏗️  [BSC] deploy_genesis_contracts: created {} genesis txs", txs.len());
 
-        for tx in txs {
-            self.transact_system_tx(&tx, beneficiary)?;
+        for (i, tx) in txs.iter().enumerate() {
+            trace!("🏗️  [BSC] deploy_genesis_contracts: executing genesis tx {}/{}: hash={:?}, to={:?}, value={}, gas_limit={}", 
+                i + 1, txs.len(), tx.hash(), tx.to(), tx.value(), tx.gas_limit());
+            self.transact_system_tx(tx, beneficiary)?;
         }
+        trace!("🏗️  [BSC] deploy_genesis_contracts: completed all {} genesis txs", txs.len());
         Ok(())
     }
 
@@ -166,6 +211,9 @@ where
         tx: &TransactionSigned,
         sender: Address,
     ) -> Result<(), BlockExecutionError> {
+        trace!("Start to transact_system_tx: sender={:?}, tx_hash={:?}, to={:?}, value={}, gas_limit={}", 
+            sender, tx.hash(), tx.to(), tx.value(), tx.gas_limit());
+
         // TODO: Consensus handle reverting slashing system txs (they shouldnt be in the block)
         // https://github.com/bnb-chain/reth/blob/main/crates/bsc/evm/src/execute.rs#L602
 
@@ -175,6 +223,8 @@ where
             .basic(sender)
             .map_err(BlockExecutionError::other)?
             .unwrap_or_default();
+
+        trace!("transact_system_tx: sender account balance={}, nonce={}", account.balance, account.nonce);
 
         let tx_env = BscTxEnv {
             base: TxEnv {
@@ -203,6 +253,9 @@ where
             is_system_transaction: true,
         };
 
+        trace!("transact_system_tx: TxEnv gas_price={}, gas_limit={}, is_system_transaction={}",
+            tx_env.base.gas_price, tx_env.base.gas_limit, tx_env.is_system_transaction);
+
         let result_and_state = self.evm.transact(tx_env).map_err(BlockExecutionError::other)?;
 
         let ResultAndState { result, state } = result_and_state;
@@ -213,6 +266,7 @@ where
 
         let tx = tx.clone();
         let gas_used = result.gas_used();
+        trace!("⚙️  [BSC] transact_system_tx: completed, gas_used={}, result={:?}", gas_used, result);
         self.gas_used += gas_used;
         self.receipts.push(self.receipt_builder.build_receipt(ReceiptBuilderCtx {
             tx: &tx,
@@ -256,6 +310,8 @@ where
         let is_slash_tx = input.len() >= 4 && input[..4] == slashCall::SELECTOR;
 
         if is_slash_tx {
+            // DEBUG: Uncomment to trace slash transaction processing
+        // debug!("⚔️  [BSC] handle_slash_tx: processing slash tx, hash={:?}", tx.hash());
             let signer = tx.recover_signer().map_err(BlockExecutionError::other)?;
             self.transact_system_tx(tx, signer)?;
         }
@@ -282,6 +338,7 @@ where
             input.len() >= 4 && input[..4] == distributeFinalityRewardCall::SELECTOR;
 
         if is_finality_reward_tx {
+            debug!("🏆 [BSC] handle_finality_reward_tx: processing finality reward tx, hash={:?}", tx.hash());
             let signer = tx.recover_signer().map_err(BlockExecutionError::other)?;
             self.transact_system_tx(tx, signer)?;
         }
@@ -308,6 +365,7 @@ where
             input.len() >= 4 && input[..4] == updateValidatorSetV2Call::SELECTOR;
 
         if is_update_validator_set_v2_tx {
+    
             let signer = tx.recover_signer().map_err(BlockExecutionError::other)?;
             self.transact_system_tx(tx, signer)?;
         }
@@ -317,6 +375,8 @@ where
 
     /// Distributes block rewards to the validator.
     fn distribute_block_rewards(&mut self, validator: Address) -> Result<(), BlockExecutionError> {
+        trace!("💰 [BSC] distribute_block_rewards: validator={:?}, block={}", validator, self.evm.block().number);
+        
         let system_account = self
             .evm
             .db_mut()
@@ -326,10 +386,12 @@ where
         if system_account.account.is_none() ||
             system_account.account.as_ref().unwrap().info.balance == U256::ZERO
         {
+            trace!("💰 [BSC] distribute_block_rewards: no system balance to distribute");
             return Ok(());
         }
 
         let (mut block_reward, mut transition) = system_account.drain_balance();
+        trace!("💰 [BSC] distribute_block_rewards: drained system balance={}", block_reward);
         transition.info = None;
         self.evm.db_mut().apply_transition(vec![(SYSTEM_ADDRESS, transition)]);
         let balance_increment = vec![(validator, block_reward)];
@@ -347,14 +409,18 @@ where
             .unwrap_or_default()
             .balance;
 
+        trace!("💰 [BSC] distribute_block_rewards: system_reward_balance={}", system_reward_balance);
+
         // Kepler introduced a max system reward limit, so we need to pay the system reward to the
         // system contract if the limit is not exceeded.
         if !self.spec.is_kepler_active_at_timestamp(self.evm.block().timestamp.to()) &&
             system_reward_balance < U256::from(MAX_SYSTEM_REWARD)
         {
             let reward_to_system = block_reward >> SYSTEM_REWARD_PERCENT;
+            trace!("💰 [BSC] distribute_block_rewards: reward_to_system={}", reward_to_system);
             if reward_to_system > 0 {
                 let tx = self.system_contracts.pay_system_tx(reward_to_system);
+                trace!("💰 [BSC] distribute_block_rewards: created pay_system_tx, hash={:?}, value={}", tx.hash(), tx.value());
                 self.transact_system_tx(&tx, validator)?;
             }
 
@@ -362,6 +428,7 @@ where
         }
 
         let tx = self.system_contracts.pay_validator_tx(validator, block_reward);
+        trace!("💰 [BSC] distribute_block_rewards: created pay_validator_tx, hash={:?}, value={}", tx.hash(), tx.value());
         self.transact_system_tx(&tx, validator)?;
         Ok(())
     }
@@ -391,6 +458,9 @@ where
     }
 }
 
+// Note: Storage patch application function is available for future use
+// Currently, Hertz patches are applied through the existing patch system
+
 impl<'a, DB, E, Spec, R> BlockExecutor for BscBlockExecutor<'a, E, Spec, R>
 where
     DB: Database + 'a,
@@ -412,19 +482,19 @@ where
     type Evm = E;
 
     fn apply_pre_execution_changes(&mut self) -> Result<(), BlockExecutionError> {
-        // Set state clear flag if the block is after the Spurious Dragon hardfork.
-        let state_clear_flag =
-            self.spec.is_spurious_dragon_active_at_block(self.evm.block().number.to());
-        self.evm.db_mut().set_state_clear_flag(state_clear_flag);
+        // pre check and prepare some intermediate data for commit parlia snapshot in finish function.
+        let block_env = self.evm.block().clone();
+        self.check_new_block(&block_env)?;
 
-        // TODO: (Consensus Verify cascading fields)[https://github.com/bnb-chain/reth/blob/main/crates/bsc/evm/src/pre_execution.rs#L43]
-        // TODO: (Consensus System Call Before Execution)[https://github.com/bnb-chain/reth/blob/main/crates/bsc/evm/src/execute.rs#L678]
+        // set state clear flag if the block is after the Spurious Dragon hardfork.
+        let state_clear_flag = self.spec.is_spurious_dragon_active_at_block(self.evm.block().number.to());
+        self.evm.db_mut().set_state_clear_flag(state_clear_flag);
 
         if !self.spec.is_feynman_active_at_timestamp(self.evm.block().timestamp.to()) {
             self.upgrade_contracts()?;
         }
 
-        // enable BEP-440/EIP-2935 for historical block hashes from state
+        // enable BEP-440/EIP-2935 for historical block hashes from state.
         if self.spec.is_prague_transition_at_timestamp(self.evm.block().timestamp.to(), self.evm.block().timestamp.to::<u64>() - 3) {
             self.apply_history_storage_account(self.evm.block().number.to::<u64>())?;
         }
@@ -440,7 +510,7 @@ where
         _tx: impl ExecutableTx<Self>,
         _f: impl FnOnce(&ExecutionResult<<Self::Evm as Evm>::HaltReason>) -> CommitChanges,
     ) -> Result<Option<u64>, BlockExecutionError> {
-        Ok(Some(0))
+        unimplemented!();
     }
 
     fn execute_transaction_with_result_closure(
@@ -452,27 +522,50 @@ where
     ) -> Result<u64, BlockExecutionError> {
         // Check if it's a system transaction
         let signer = tx.signer();
-        if is_system_transaction(tx.tx(), *signer, self.evm.block().beneficiary) {
+        let is_system = is_system_transaction(tx.tx(), *signer, self.evm.block().beneficiary);
+        
+        // DEBUG: Uncomment to trace transaction execution details
+        // debug!("🔍 [BSC] execute_transaction_with_result_closure: tx_hash={:?}, signer={:?}, beneficiary={:?}, is_system={}, to={:?}, value={}, gas_limit={}, max_fee_per_gas={}", 
+        //     tx.tx().hash(), signer, self.evm.block().beneficiary, is_system, tx.tx().to(), tx.tx().value(), tx.tx().gas_limit(), tx.tx().max_fee_per_gas());
+
+        if is_system {
+            // DEBUG: Uncomment to trace system transaction handling
+            // debug!("⚙️  [BSC] execute_transaction_with_result_closure: queuing system tx for later execution");
             self.system_txs.push(tx.tx().clone());
             return Ok(0);
         }
 
-        // apply patches before
+        // DEBUG: Uncomment to trace regular transaction execution
+        // debug!("🚀 [BSC] execute_transaction_with_result_closure: executing regular tx, block_gas_used={}, block_gas_limit={}, available_gas={}", 
+        //     self.gas_used, self.evm.block().gas_limit, self.evm.block().gas_limit - self.gas_used);
+
+        // Apply Hertz patches before transaction execution
+        // Note: Hertz patches are implemented in the existing patch system
+        // The HertzPatchManager is available for future enhanced patching
+        
+        // apply patches before (legacy - keeping for compatibility)
         patch_mainnet_before_tx(tx.tx(), self.evm.db_mut())?;
         patch_chapel_before_tx(tx.tx(), self.evm.db_mut())?;
 
         let block_available_gas = self.evm.block().gas_limit - self.gas_used;
         if tx.tx().gas_limit() > block_available_gas {
+            warn!("❌ [BSC] execute_transaction_with_result_closure: tx gas limit {} exceeds available block gas {}", 
+                tx.tx().gas_limit(), block_available_gas);
             return Err(BlockValidationError::TransactionGasLimitMoreThanAvailableBlockGas {
                 transaction_gas_limit: tx.tx().gas_limit(),
                 block_available_gas,
             }
             .into());
         }
+        
+        trace!("🔥 [BSC] execute_transaction_with_result_closure: calling EVM transact for regular tx");
         let result_and_state = self
             .evm
             .transact(tx)
-            .map_err(|err| BlockExecutionError::evm(err, tx.tx().trie_hash()))?;
+            .map_err(|err| {
+                warn!("❌ [BSC] execute_transaction_with_result_closure: EVM transact failed: {:?}", err);
+                BlockExecutionError::evm(err, tx.tx().trie_hash())
+            })?;
         let ResultAndState { result, state } = result_and_state;
 
         f(&result);
@@ -485,6 +578,7 @@ where
         }
 
         let gas_used = result.gas_used();
+        trace!("✅ [BSC] execute_transaction_with_result_closure: tx completed, gas_used={}, result={:?}", gas_used, result);
         self.gas_used += gas_used;
         self.receipts.push(self.receipt_builder.build_receipt(ReceiptBuilderCtx {
             tx: tx.tx(),
@@ -495,20 +589,22 @@ where
         }));
         self.evm.db_mut().commit(state);
 
-        // apply patches after
+        // Apply Hertz patches after transaction execution
+        // Note: Hertz patches are implemented in the existing patch system
+        // The HertzPatchManager is available for future enhanced patching
+        
+        // apply patches after (legacy - keeping for compatibility)
         patch_mainnet_after_tx(tx.tx(), self.evm.db_mut())?;
         patch_chapel_after_tx(tx.tx(), self.evm.db_mut())?;
 
         Ok(gas_used)
     }
 
+
+
     fn finish(
         mut self,
     ) -> Result<(Self::Evm, BlockExecutionResult<R::Receipt>), BlockExecutionError> {
-        // TODO:
-        // Consensus: Verify validators
-        // Consensus: Verify turn length
-
         // If first block deploy genesis contracts
         if self.evm.block().number == uint!(1U256) {
             self.deploy_genesis_contracts(self.evm.block().beneficiary)?;
@@ -517,7 +613,6 @@ where
         if self.spec.is_feynman_active_at_timestamp(self.evm.block().timestamp.to()) {
             self.upgrade_contracts()?;
         }
-
         if self.spec.is_feynman_active_at_timestamp(self.evm.block().timestamp.to()) &&
             !self
                 .spec
@@ -526,27 +621,189 @@ where
             self.initialize_feynman_contracts(self.evm.block().beneficiary)?;
         }
 
-        let system_txs = self.system_txs.clone();
-        for tx in &system_txs {
+        self.finalize_new_block(&self.evm.block().clone())?;
+
+
+        // Prepare system transactions list and append slash transactions collected from consensus.
+        let mut system_txs = self.system_txs.clone();
+
+        // Drain slashing evidence collected by header-validation for this block.
+        for spoiled in crate::consensus::parlia::slash_pool::drain() {
+            use alloy_sol_macro::sol;
+            use alloy_sol_types::SolCall;
+            use crate::system_contracts::SLASH_CONTRACT;
+            sol!(
+                function slash(address);
+            );
+            let input = slashCall(spoiled).abi_encode();
+            let tx = reth_primitives::TransactionSigned::new_unhashed(
+                reth_primitives::Transaction::Legacy(alloy_consensus::TxLegacy {
+                    chain_id: Some(self.spec.chain().id()),
+                    nonce: 0,
+                    gas_limit: u64::MAX / 2,
+                    gas_price: 0,
+                    value: alloy_primitives::U256::ZERO,
+                    input: alloy_primitives::Bytes::from(input),
+                    to: alloy_primitives::TxKind::Call(Address::from(*SLASH_CONTRACT)),
+                }),
+                alloy_primitives::Signature::new(Default::default(), Default::default(), false),
+            );
+            // DEBUG: Uncomment to trace slash transaction creation
+            // debug!("⚔️  [BSC] finish: added slash tx for spoiled validator {:?}", spoiled);
+            system_txs.push(tx);
+        }
+
+        // DEBUG: Uncomment to trace system transaction processing
+        // debug!("🎯 [BSC] finish: processing {} system txs for slash handling", system_txs.len());
+        let system_txs_for_slash = system_txs.clone();
+        for (_i, tx) in system_txs_for_slash.iter().enumerate() {
+            // DEBUG: Uncomment to trace individual slash transaction handling
+            // debug!("⚔️  [BSC] finish: handling slash tx {}/{}: hash={:?}", i + 1, system_txs_for_slash.len(), tx.hash());
             self.handle_slash_tx(tx)?;
         }
 
+
+        // ---- post-system-tx handling ---------------------------------
         self.distribute_block_rewards(self.evm.block().beneficiary)?;
 
         if self.spec.is_plato_active_at_block(self.evm.block().number.to()) {
-            for tx in system_txs {
-                self.handle_finality_reward_tx(&tx)?;
+            for (_i, tx) in system_txs.iter().enumerate() {
+                self.handle_finality_reward_tx(tx)?;
             }
         }
 
         // TODO: add breathe check and polish it later.
         let system_txs_v2 = self.system_txs.clone();
-        for tx in &system_txs_v2 {
+        for (_i, tx) in system_txs_v2.iter().enumerate() {
             self.handle_update_validator_set_v2_tx(tx)?;
         }
 
         // TODO:
         // Consensus: Slash validator if not in turn
+        
+        // -----------------------------------------------------------------
+        // reth-bsc-trail PATTERN: Create current snapshot from parent snapshot after execution
+        // Get parent snapshot at start, apply current block changes, cache current snapshot
+        // -----------------------------------------------------------------
+        let current_block_number = self.evm.block().number.to::<u64>();
+        if let Some(provider) = crate::shared::get_snapshot_provider() {
+            // Get parent snapshot (like reth-bsc-trail does)
+            let parent_number = current_block_number.saturating_sub(1);
+            if let Some(parent_snapshot) = provider.snapshot(parent_number) {
+                // Create current snapshot by applying current block to parent snapshot (like reth-bsc-trail does)
+                // We need to create a simple header for snapshot application
+                let current_block = self.evm.block();
+                
+                // Create a minimal header for snapshot application
+                // Note: We only need the essential fields for snapshot application
+                let header = alloy_consensus::Header {
+                    parent_hash: alloy_primitives::B256::ZERO, // Not used in snapshot.apply
+                    beneficiary: current_block.beneficiary,
+                    state_root: alloy_primitives::B256::ZERO, // Not used in snapshot.apply
+                    transactions_root: alloy_primitives::B256::ZERO, // Not used in snapshot.apply
+                    receipts_root: alloy_primitives::B256::ZERO, // Not used in snapshot.apply
+                    logs_bloom: alloy_primitives::Bloom::ZERO, // Not used in snapshot.apply
+                    difficulty: current_block.difficulty,
+                    number: current_block.number.to::<u64>(),
+                    gas_limit: current_block.gas_limit,
+                    gas_used: self.gas_used, // Use actual gas used from execution
+                    timestamp: current_block.timestamp.to::<u64>(),
+                    extra_data: alloy_primitives::Bytes::new(), // Will be filled from actual block data
+                    mix_hash: alloy_primitives::B256::ZERO, // Not used in snapshot.apply
+                    nonce: alloy_primitives::B64::ZERO, // Not used in snapshot.apply
+                    base_fee_per_gas: Some(current_block.basefee),
+                    withdrawals_root: None, // Not used in snapshot.apply
+                    blob_gas_used: None, // Not used in snapshot.apply
+                    excess_blob_gas: None, // Not used in snapshot.apply
+                    parent_beacon_block_root: None, // Not used in snapshot.apply
+                    ommers_hash: alloy_primitives::B256::ZERO, // Not used in snapshot.apply
+                    requests_hash: None, // Not used in snapshot.apply
+                };
+                
+                // Check for epoch boundary and parse validator updates (exactly like reth-bsc-trail does)
+                let epoch_num = parent_snapshot.epoch_num;
+                let miner_check_len = parent_snapshot.miner_history_check_len();
+                let is_epoch_boundary = current_block_number > 0 && 
+                    current_block_number % epoch_num == miner_check_len;
+                
+                let (new_validators, vote_addrs, turn_length) = if is_epoch_boundary {
+                    // Epoch boundary detected during execution
+                    
+                    // Find the checkpoint header (miner_check_len blocks back, like reth-bsc-trail does)
+                    let checkpoint_block_number = current_block_number - miner_check_len;
+                    // Looking for validator updates in checkpoint block
+                    
+                    // Use the global snapshot provider to access header data
+                    if let Some(provider) = crate::shared::get_snapshot_provider() {
+                        // Try to get the checkpoint header from the same provider that has database access
+                        match provider.get_checkpoint_header(checkpoint_block_number) {
+                            Some(checkpoint_header) => {
+                                // Successfully fetched checkpoint header
+                                
+                                // Parse validator set from checkpoint header (like reth-bsc-trail does)
+                                let parsed = crate::consensus::parlia::validator::parse_epoch_update(&checkpoint_header, 
+                                    self.spec.is_luban_active_at_block(checkpoint_block_number),
+                                    self.spec.is_bohr_active_at_timestamp(checkpoint_header.timestamp)
+                                );
+                                
+                                // Validator set parsed from checkpoint header
+                                
+                                parsed
+                            },
+                            None => {
+                                tracing::warn!("⚠️ [BSC] Checkpoint header for block {} not found via snapshot provider", checkpoint_block_number);
+                                (Vec::new(), None, None)
+                            }
+                        }
+                    } else {
+                        tracing::error!("❌ [BSC] No global snapshot provider available for header fetching");
+                        (Vec::new(), None, None)
+                    }
+                } else {
+                    (Vec::new(), None, None)
+                };
+
+                // Get current header and parse attestation
+                let current_header = provider.get_checkpoint_header(current_block_number);
+                let (apply_header, attestation) = if let Some(current_header) = current_header {
+                    let attestation = crate::consensus::parlia::attestation::parse_vote_attestation_from_header(
+                        &current_header,
+                        parent_snapshot.epoch_num,
+                        self.spec.is_luban_active_at_block(current_block_number),
+                        self.spec.is_bohr_active_at_timestamp(current_header.timestamp)
+                    );
+                    (current_header, attestation)
+                } else {
+                    // Fallback to the constructed header if we can't get the real one
+                    (header, None)
+                };
+
+                // Apply current block to parent snapshot (like reth-bsc-trail does)
+                if let Some(current_snapshot) = parent_snapshot.apply(
+                    current_block.beneficiary, // proposer
+                    &apply_header,
+                    new_validators, // parsed validators from checkpoint header
+                    vote_addrs, // parsed vote addresses from checkpoint header
+                    attestation, // parsed attestation from header
+                    turn_length, // parsed turn length from checkpoint header
+                    &self.spec,
+                ) {
+                    // Cache the current snapshot immediately (like reth-bsc-trail does)
+                    provider.insert(current_snapshot.clone());
+                    
+                    // Log only for major checkpoints to reduce spam
+                    if current_block_number % (crate::consensus::parlia::snapshot::CHECKPOINT_INTERVAL * 10) == 0 {
+                        tracing::info!("📦 [BSC] Created checkpoint snapshot for block {}", current_block_number);
+                    }
+                } else {
+                    tracing::error!("❌ [BSC] Failed to apply block {} to parent snapshot", current_block_number);
+                }
+            } else {
+                tracing::warn!("⚠️ [BSC] Parent snapshot not available for block {} during execution", current_block_number);
+            }
+        } else {
+            tracing::warn!("⚠️ [BSC] No snapshot provider available during execution for block {}", current_block_number);
+        }
 
         Ok((
             self.evm,
@@ -569,4 +826,5 @@ where
     fn evm(&self) -> &Self::Evm {
         &self.evm
     }
+
 }

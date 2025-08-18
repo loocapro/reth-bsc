@@ -33,7 +33,7 @@ fn bls_signature_validation_run(input: &[u8], gas_limit: u64) -> PrecompileResul
     let msg_and_sig_length = BLS_MSG_HASH_LENGTH + BLS_SIGNATURE_LENGTH;
     let input_length = input.len() as u64;
     if (input_length <= msg_and_sig_length) ||
-        !((input_length - msg_and_sig_length).is_multiple_of(BLS_SINGLE_PUBKEY_LENGTH))
+        ((input_length - msg_and_sig_length) % BLS_SINGLE_PUBKEY_LENGTH != 0)
     {
         return revert()
     }
@@ -85,7 +85,7 @@ fn calc_gas_cost(input: &[u8]) -> u64 {
     let input_length = input.len() as u64;
 
     if (input_length <= msg_length) ||
-        !((input_length - msg_length).is_multiple_of(single_pubkey_length))
+        ((input_length - msg_length) % single_pubkey_length != 0)
     {
         return BLS_SIGNATURE_VALIDATION_BASE;
     }

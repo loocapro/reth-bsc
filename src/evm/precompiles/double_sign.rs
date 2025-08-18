@@ -45,23 +45,23 @@ pub(crate) struct Header {
 
 /// The fields to generate the seal hash.
 #[derive(Debug, RlpEncodable, RlpDecodable, PartialEq)]
-pub(crate) struct SealContent {
-    pub(crate) chain_id: ChainId,
-    pub(crate) parent_hash: [u8; 32],
-    pub(crate) uncle_hash: [u8; 32],
-    pub(crate) coinbase: [u8; 20],
-    pub(crate) root: [u8; 32],
-    pub(crate) tx_hash: [u8; 32],
-    pub(crate) receipt_hash: [u8; 32],
-    pub(crate) bloom: [u8; 256],
-    pub(crate) difficulty: U256,
-    pub(crate) number: BlockNumber,
-    pub(crate) gas_limit: u64,
-    pub(crate) gas_used: u64,
-    pub(crate) time: u64,
-    pub(crate) extra: Bytes,
-    pub(crate) mix_digest: [u8; 32],
-    pub(crate) nonce: [u8; 8],
+pub struct SealContent {
+    pub chain_id: ChainId,
+    pub parent_hash: [u8; 32],
+    pub uncle_hash: [u8; 32],
+    pub coinbase: [u8; 20],
+    pub root: [u8; 32],
+    pub tx_hash: [u8; 32],
+    pub receipt_hash: [u8; 32],
+    pub bloom: [u8; 256],
+    pub difficulty: U256,
+    pub number: BlockNumber,
+    pub gas_limit: u64,
+    pub gas_used: u64,
+    pub time: u64,
+    pub extra: Bytes,
+    pub mix_digest: [u8; 32],
+    pub nonce: [u8; 8],
 }
 
 /// Run the double sign evidence validation precompile.
@@ -102,6 +102,7 @@ fn double_sign_evidence_validation_run(input: &[u8], gas_limit: u64) -> Precompi
     if header1.parent_hash.cmp(&header2.parent_hash) != Ordering::Equal {
         return Err(BscPrecompileError::DoubleSignInvalidEvidence.into());
     }
+
 
     if header1.extra.len() < EXTRA_SEAL_LENGTH || header2.extra.len() < EXTRA_SEAL_LENGTH {
         return Err(BscPrecompileError::DoubleSignInvalidEvidence.into());

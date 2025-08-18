@@ -154,6 +154,18 @@ pub trait BscHardforks: EthereumHardforks {
         self.bsc_fork_activation(BscHardfork::Haber).active_at_timestamp(timestamp)
     }
 
+    /// Convenience method to check if [`BscHardfork::Tycho`] is firstly active at a given
+    /// timestamp and parent timestamp.
+    fn is_on_tycho_at_timestamp(&self, timestamp: u64, parent_timestamp: u64) -> bool {
+        self.bsc_fork_activation(BscHardfork::Tycho)
+            .transitions_at_timestamp(timestamp, parent_timestamp)
+    }
+
+    /// Convenience method to check if [`BscHardfork::Tycho`] is active at a given timestamp.
+    fn is_tycho_active_at_timestamp(&self, timestamp: u64) -> bool {
+        self.bsc_fork_activation(BscHardfork::Tycho).active_at_timestamp(timestamp)
+    }
+
     /// Convenience method to check if [`BscHardfork::HaberFix`] is firstly active at a given
     /// timestamp and parent timestamp.
     fn is_haber_fix_transition_at_timestamp(&self, timestamp: u64, parent_timestamp: u64) -> bool {

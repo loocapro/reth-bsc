@@ -53,7 +53,15 @@ impl BscNode {
     }
 }
 
+impl Default for BscNode {
+    fn default() -> Self {
+        let (node, _tx) = Self::new();
+        node
+    }
+}
+
 impl BscNode {
+    /// Returns a [`ComponentsBuilder`] configured for a regular BSC node.
     pub fn components<Node>(
         &self,
     ) -> ComponentsBuilder<
@@ -72,8 +80,8 @@ impl BscNode {
             .pool(EthereumPoolBuilder::default())
             .executor(BscExecutorBuilder::default())
             .payload(BscPayloadServiceBuilder::default())
-            .network(BscNetworkBuilder { engine_handle_rx: self.engine_handle_rx.clone() })
-            .consensus(BscConsensusBuilder::default())
+            .network(BscNetworkBuilder::new(self.engine_handle_rx.clone()))
+            .consensus(BscConsensusBuilder::default())  // 🚀 Uses persistent snapshots!
     }
 }
 
@@ -101,7 +109,7 @@ where
     type AddOns = BscNodeAddOns<NodeAdapter<N>>;
 
     fn components_builder(&self) -> Self::ComponentsBuilder {
-        Self::components(self)
+        self.components()
     }
 
     fn add_ons(&self) -> Self::AddOns {
