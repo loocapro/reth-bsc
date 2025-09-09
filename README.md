@@ -15,8 +15,8 @@ This project aims to bring Reth's high-performance Ethereum client capabilities 
 
 ### Sync Status (as of September 1st, 2025)
 
-- **BSC Mainnet**: Synced to the tip ✅ (12T disk required)
-- **BSC Testnet**: Synced to the tip ✅ (780GB disk usage)
+- **BSC Mainnet**: Synced to the tip ✅ (9.6TB disk required for archival node)
+- **BSC Testnet**: Synced to the tip ✅ (780GB disk required for archival node)
 
 ## Getting Started
 
